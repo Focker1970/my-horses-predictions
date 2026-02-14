@@ -115,6 +115,17 @@ else:
                     # 購入推奨
                     rec = race.get("recommendation")
                     if rec:
+                        # 妙味診断
+                        myomi = rec.get("妙味診断", "")
+                        myomi_reason = rec.get("妙味理由", "")
+                        if myomi:
+                            myomi_icons = {"高": "🔥", "中": "⚡", "低": "❄️"}
+                            myomi_colors = {"高": "green", "中": "orange", "低": "gray"}
+                            mi = myomi_icons.get(myomi, "")
+                            mc = myomi_colors.get(myomi, "gray")
+                            st.markdown(f"**{mi} 妙味: :{mc}[{myomi}]**")
+                            st.caption(myomi_reason)
+
                         pattern_icons = {"本命型": "🎯", "混戦型": "⚔️", "波乱型": "🌊"}
                         icon = pattern_icons.get(rec.get("パターン", ""), "")
                         st.markdown(f"**{icon} レースパターン: {rec.get('パターン', '')}**")
@@ -163,6 +174,42 @@ else:
                                 use_container_width=True,
                                 hide_index=True,
                             )
+
+                    # レース結果（JSONに埋め込み済みの場合）
+                    result_data = race.get("result")
+                    if result_data:
+                        st.markdown("---")
+                        st.markdown("**📊 レース結果**")
+
+                        result_df = pd.DataFrame(result_data)
+                        if "着順" in result_df.columns and len(result_df) > 0:
+                            result_df["着順"] = pd.to_numeric(result_df["着順"], errors="coerce")
+                            valid = result_df[result_df["着順"].notna()].copy()
+                            valid["着順"] = valid["着順"].astype(int)
+
+                            # 的中判定
+                            if preds and len(valid) > 0:
+                                pred_top = pred_df.iloc[0]
+                                winner = valid.loc[valid["着順"].idxmin()]
+                                pred_umaban = int(pred_top["馬番"])
+                                win_umaban = int(winner["馬番"])
+                                if pred_umaban == win_umaban:
+                                    st.success(f"✅ 的中！ 予測1位 {pred_top['馬名']}（馬番{pred_umaban}）= 1着")
+                                else:
+                                    pred_top_result = valid[valid["馬番"] == pred_umaban]
+                                    if len(pred_top_result) > 0:
+                                        actual_rank = int(pred_top_result.iloc[0]["着順"])
+                                        st.error(f"❌ 不的中 — 予測1位 {pred_top['馬名']}（馬番{pred_umaban}）→ {actual_rank}着 / 1着: {winner['馬名']}（馬番{win_umaban}）")
+                                    else:
+                                        st.error(f"❌ 不的中 — 予測1位 {pred_top['馬名']}（馬番{pred_umaban}）→ 出走取消 / 1着: {winner['馬名']}（馬番{win_umaban}）")
+
+                            # 上位5着
+                            top5 = valid.sort_values("着順").head(5)
+                            disp_result_cols = [c for c in ["着順", "馬番", "馬名", "タイム", "単勝", "人気"] if c in top5.columns]
+                            result_disp = top5[disp_result_cols].copy()
+                            if "単勝" in result_disp.columns:
+                                result_disp = result_disp.rename(columns={"単勝": "単勝オッズ"})
+                            st.dataframe(result_disp, use_container_width=True, hide_index=True)
 
     # 回収率の考え方
     with st.expander("📊 回収率の考え方"):
