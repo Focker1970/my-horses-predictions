@@ -10,6 +10,11 @@ PUBLIC_DIR="$PROJECT_DIR/public"
 # 予測JSONをコピー
 cp "$PROJECT_DIR/data/predictions/"*.json "$PUBLIC_DIR/data/predictions/" 2>/dev/null || true
 
+# 戦略分析CSVをコピー
+mkdir -p "$PUBLIC_DIR/data/strategy"
+cp "$PROJECT_DIR/data/strategy/filter_results.csv" "$PUBLIC_DIR/data/strategy/" 2>/dev/null || true
+cp "$PROJECT_DIR/data/strategy/race_analysis.csv" "$PUBLIC_DIR/data/strategy/" 2>/dev/null || true
+
 # git push
 cd "$PUBLIC_DIR"
 git add -A
