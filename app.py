@@ -27,6 +27,23 @@ div[data-testid="column"] .stButton > button {
     text-align: center !important;
     min-height: 48px !important;
 }
+/* カレンダー：土曜（6列目）→ 青枠 */
+div[data-testid="column"]:nth-child(6) .stButton > button,
+[data-testid="stColumn"]:nth-child(6) .stButton > button {
+    border: 2px solid #1565c0 !important;
+}
+/* カレンダー：日曜（7列目）→ 赤枠 */
+div[data-testid="column"]:nth-child(7) .stButton > button,
+[data-testid="stColumn"]:nth-child(7) .stButton > button {
+    border: 2px solid #c62828 !important;
+}
+/* 曜日ヘッダー */
+.cal-week-header {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 0.5rem;
+    margin-bottom: 4px;
+}
 @media (max-width: 640px) {
     .block-container {
         padding-left: 0.5rem !important;
@@ -38,6 +55,8 @@ div[data-testid="column"] .stButton > button {
         min-height: 44px !important;
     }
     h1 { font-size: 1.3rem !important; }
+    /* スマホでは曜日ヘッダーを非表示 */
+    .cal-week-header { display: none !important; }
 }
 </style>
 """,
@@ -604,13 +623,19 @@ with tab_cal:
             st.session_state.cal_month = (y, m)
             st.rerun()
 
-    # 曜日ヘッダー
-    hdr_cols = st.columns(7)
-    for i, name in enumerate(["月", "火", "水", "木", "金", "土", "日"]):
-        hdr_cols[i].markdown(
-            f"<div style='text-align:center;font-size:0.72rem;color:#666;padding:2px 0;'>{name}</div>",
-            unsafe_allow_html=True,
-        )
+    # 曜日ヘッダー（スマホでは非表示）
+    st.markdown(
+        """<div class="cal-week-header">
+<div style="text-align:center;font-size:0.72rem;color:#666;padding:2px 0;">月</div>
+<div style="text-align:center;font-size:0.72rem;color:#666;padding:2px 0;">火</div>
+<div style="text-align:center;font-size:0.72rem;color:#666;padding:2px 0;">水</div>
+<div style="text-align:center;font-size:0.72rem;color:#666;padding:2px 0;">木</div>
+<div style="text-align:center;font-size:0.72rem;color:#666;padding:2px 0;">金</div>
+<div style="text-align:center;font-size:0.72rem;color:#1565c0;font-weight:bold;padding:2px 0;">土</div>
+<div style="text-align:center;font-size:0.72rem;color:#c62828;font-weight:bold;padding:2px 0;">日</div>
+</div>""",
+        unsafe_allow_html=True,
+    )
 
     # カレンダーグリッド（各日をボタンで表示）
     for week in _cal_module.monthcalendar(cal_y, cal_m):
