@@ -575,108 +575,73 @@ with tab_cal:
         merged.append({"sched": None, "pred": pr})
         used_pred_ids.add(rid)
 
-    # ── 月次カレンダー（HTML テーブル） ──
+    # ── 月次カレンダー（ボタングリッド） ──
     import calendar as _cal_module
 
     if "cal_month" not in st.session_state:
         st.session_state.cal_month = (today.year, today.month)
     cal_y, cal_m = st.session_state.cal_month
 
-    nav1, nav2, nav3 = st.columns([1, 4, 1])
+    nav1, nav2, nav3 = st.columns([1, 3, 1])
     with nav1:
         if st.button("◀", key="cal_prev"):
-            m = cal_m - 1
-            y = cal_y
+            m, y = cal_m - 1, cal_y
             if m < 1:
                 m, y = 12, y - 1
             st.session_state.cal_month = (y, m)
             st.rerun()
     with nav2:
         st.markdown(
-            f"<div style='text-align:center;font-size:1.05rem;font-weight:bold;padding:6px 0;'>"
+            f"<div style='text-align:center;font-size:1rem;font-weight:bold;padding:6px 0;'>"
             f"{cal_y}年{cal_m}月</div>",
             unsafe_allow_html=True,
         )
     with nav3:
         if st.button("▶", key="cal_next"):
-            m = cal_m + 1
-            y = cal_y
+            m, y = cal_m + 1, cal_y
             if m > 12:
                 m, y = 1, y + 1
             st.session_state.cal_month = (y, m)
             st.rerun()
 
-    _today_str = datetime.date.today().isoformat()
-    weeks = _cal_module.monthcalendar(cal_y, cal_m)
-    day_hdr = "".join(
-        f'<th style="text-align:center;padding:3px 2px;font-size:0.7rem;color:#555;">{d}</th>'
-        for d in ["月", "火", "水", "木", "金", "土", "日"]
-    )
-    rows_html = ""
-    for week in weeks:
-        row = ""
-        for day in week:
+    # 曜日ヘッダー
+    hdr_cols = st.columns(7)
+    for i, name in enumerate(["月", "火", "水", "木", "金", "土", "日"]):
+        hdr_cols[i].markdown(
+            f"<div style='text-align:center;font-size:0.72rem;color:#666;padding:2px 0;'>{name}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # カレンダーグリッド（各日をボタンで表示）
+    for week in _cal_module.monthcalendar(cal_y, cal_m):
+        wcols = st.columns(7)
+        for i, day in enumerate(week):
             if day == 0:
-                row += '<td style="background:#f8f9fa;padding:3px;"></td>'
-            else:
-                ds = f"{cal_y}-{cal_m:02d}-{day:02d}"
-                day_races = [
-                    r for r in schedule_by_date.get(ds, [])
-                    if r.get("grade") in grade_filter
-                    and (surface_filter == "全" or surface_filter in r.get("distance", ""))
-                ]
-                badges = "".join(
-                    f'<span style="display:inline-block;'
-                    f'background:{GRADE_COLORS.get(r.get("grade", ""), {"bg": "#aaa"})["bg"]};'
-                    f'color:#fff;border-radius:2px;padding:0 2px;font-size:0.52rem;margin:1px 0;">'
-                    f'{r.get("grade", "")}</span>'
-                    for r in day_races
-                )
-                pred_dot = (
-                    '<span style="color:#1a73e8;font-size:0.6rem;">●</span>'
-                    if ds in pred_dates else ""
-                )
-                is_sel = ds == sel
-                is_today = ds == _today_str
-                if is_today:
-                    border = "2px solid #d4a017"
-                else:
-                    border = "2px solid #1a73e8" if is_sel else "1px solid #e8eaed"
-                bg = "#e8f0fe" if is_sel else "#fff"
-                row += (
-                    f'<td style="padding:2px 3px;border:{border};background:{bg};'
-                    f'min-width:28px;vertical-align:top;font-size:0.78rem;">'
-                    f'<div style="white-space:nowrap;">{day}{pred_dot}</div>'
-                    f'<div>{badges}</div>'
-                    f'</td>'
-                )
-        rows_html += f"<tr>{row}</tr>"
+                wcols[i].empty()
+                continue
+            ds = f"{cal_y}-{cal_m:02d}-{day:02d}"
+            day_races = [
+                r for r in schedule_by_date.get(ds, [])
+                if r.get("grade") in grade_filter
+                and (surface_filter == "全" or surface_filter in r.get("distance", ""))
+            ]
+            label_lines = [str(day)]
+            if ds in pred_dates:
+                label_lines.append("●")
+            if day_races:
+                label_lines.append(" ".join(r.get("grade", "") for r in day_races))
+            label = "\n".join(label_lines)
 
-    st.markdown(
-        f'<table style="border-collapse:collapse;width:100%;margin-bottom:6px;">'
-        f'<tr>{day_hdr}</tr>{rows_html}</table>',
-        unsafe_allow_html=True,
-    )
+            btn_type = "primary" if ds == sel else "secondary"
+            if wcols[i].button(
+                label, key=f"cal_btn_{ds}",
+                type=btn_type, use_container_width=True,
+            ):
+                st.session_state.cal_selected = ds
+                st.session_state.cal_month = (cal_y, cal_m)
+                st.rerun()
 
-    # 凡例
-    st.markdown(
-        '<span style="background:#d4a017;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G1</span> '
-        '<span style="background:#6c757d;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G2</span> '
-        '<span style="background:#8b5e3c;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G3</span> '
-        '&nbsp;<span style="color:#1a73e8;">●</span> 予測済み',
-        unsafe_allow_html=True,
-    )
-
-    # 日付選択
-    try:
-        _sel_date = datetime.date.fromisoformat(sel)
-    except Exception:
-        _sel_date = today
-    _picked = st.date_input("📅 日付を選択", value=_sel_date, key="cal_date_input")
-    if _picked.isoformat() != sel:
-        st.session_state.cal_selected = _picked.isoformat()
-        st.session_state.cal_month = (_picked.year, _picked.month)
-        st.rerun()
+    st.caption("● 予測済み ／ 青ボタン＝選択中 ／ G1・G2・G3＝当日の重賞")
 
     # ── レース一覧 ──
     st.divider()
