@@ -57,17 +57,7 @@ div[data-testid="column"]:nth-child(7) .stButton > button,
     h1 { font-size: 1.3rem !important; }
     /* スマホでは曜日ヘッダーを非表示 */
     .cal-week-header { display: none !important; }
-    /* 列レイアウトを常に横並びに維持（縦積み防止） */
-    [data-testid="stHorizontalBlock"],
-    [data-testid="stColumns"] {
-        flex-direction: row !important;
-        flex-wrap: nowrap !important;
-        align-items: center !important;
-    }
-    [data-testid="column"],
-    [data-testid="stColumn"] {
-        min-width: 0 !important;
-    }
+
 }
 </style>
 """,
