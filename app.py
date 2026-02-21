@@ -617,6 +617,8 @@ with tab_cal:
     events.sort(key=lambda x: x["start"])
 
     # ── カレンダー ──
+    # callbacks を dateClick/eventClick のみに限定することで
+    # eventsSet の無限ループ（初期化→リラン→再マウント）を防止
     cal_result = st_calendar(
         events=events,
         options={
@@ -641,6 +643,7 @@ with tab_cal:
                 .fc-event-title { font-size: 0.62rem; }
             }
         """,
+        callbacks=["dateClick", "eventClick"],
         key="pub_race_cal_v2",
     )
 
