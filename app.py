@@ -77,7 +77,8 @@ div[data-testid="column"]:nth-child(7) .stButton > button,
 st.title("🏇 My Horses AI — レース予測")
 
 # ─── Session State（カレンダー用） ──────────────────────────
-today = datetime.date.today()
+_JST = datetime.timezone(datetime.timedelta(hours=9))
+today = datetime.datetime.now(_JST).date()
 if "cal_selected" not in st.session_state:
     st.session_state.cal_selected = today.isoformat()
 
