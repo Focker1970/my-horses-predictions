@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
-from streamlit_calendar import calendar as st_calendar
 
 APP_DIR = Path(__file__).resolve().parent
 PREDICTIONS_DIR = APP_DIR / "data" / "predictions"
@@ -523,25 +522,6 @@ def _match_pred(sched_name: str, pred_races: list[dict], used: set[str]) -> dict
     return None
 
 
-_JST = datetime.timezone(datetime.timedelta(hours=9))
-
-
-def _to_jst_date(s: str) -> str:
-    """UTC ISO文字列またはdate文字列をJST日付文字列 YYYY-MM-DD に変換"""
-    if not s:
-        return ""
-    if "T" not in s:
-        return s[:10]
-    try:
-        return (
-            datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
-            .astimezone(_JST)
-            .strftime("%Y-%m-%d")
-        )
-    except Exception:
-        return s[:10]
-
-
 STATUS_BG = {"結果あり": "#e6f4ea", "予測済み": "#e8f0fe", "未予測": "#fff3e0"}
 GRADE_COLORS = {
     "G1": {"bg": "#d4a017", "border": "#b8860b"},
@@ -595,83 +575,108 @@ with tab_cal:
         merged.append({"sched": None, "pred": pr})
         used_pred_ids.add(rid)
 
-    # イベントリスト構築
-    events: list[dict] = []
-    for date_str, races in schedule_by_date.items():
-        for race in races:
-            grade = race.get("grade", "")
-            if grade not in grade_filter:
-                continue
-            dist = race.get("distance", "")
-            if surface_filter != "全" and not dist.startswith(surface_filter):
-                continue
-            color = GRADE_COLORS.get(grade, {"bg": "#4a90d9", "border": "#2a70b9"})
-            title = ("● " if date_str in pred_dates else "") + race["race_name"]
-            events.append({
-                "title": title,
-                "start": date_str,
-                "backgroundColor": color["bg"],
-                "borderColor": color["border"],
-                "textColor": "#fff",
-            })
-    events.sort(key=lambda x: x["start"])
+    # ── 月次カレンダー（HTML テーブル） ──
+    import calendar as _cal_module
 
-    # ── カレンダー ──
-    # callbacks を dateClick/eventClick のみに限定することで
-    # eventsSet の無限ループ（初期化→リラン→再マウント）を防止
-    cal_result = st_calendar(
-        events=events,
-        options={
-            "headerToolbar": {
-                "left": "prev,next today",
-                "center": "title",
-                "right": "",
-            },
-            "initialView": "dayGridMonth",
-            "initialDate": sel,
-            "locale": "ja",
-            "height": 520,
-            "editable": False,
-        },
-        custom_css="""
-            .fc-event-title { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; }
-            .fc-toolbar-title { font-size: 1.1rem; }
-            .fc-button { font-size: 0.8rem !important; padding: 0.2rem 0.5rem !important; }
-            @media (max-width: 640px) {
-                .fc-toolbar-title { font-size: 0.85rem !important; }
-                .fc-button { font-size: 0.65rem !important; padding: 0.15rem 0.25rem !important; }
-                .fc-event-title { font-size: 0.62rem; }
-            }
-        """,
-        callbacks=["dateClick", "eventClick"],
-        key="pub_race_cal_v2",
-    )
+    if "cal_month" not in st.session_state:
+        st.session_state.cal_month = (today.year, today.month)
+    cal_y, cal_m = st.session_state.cal_month
 
-    # クリックハンドリング (v1.4.0 API)
-    # dateStr はローカル日付文字列、date/start は UTC ISO → JST 変換が必要
-    if cal_result:
-        new_sel = None
-        date_click = cal_result.get("dateClick")
-        if date_click:
-            ds = (date_click.get("dateStr") or "")[:10]
-            new_sel = ds if ds else _to_jst_date(date_click.get("date", ""))
-        event_click = cal_result.get("eventClick")
-        if event_click and not new_sel:
-            start = event_click.get("event", {}).get("start", "")
-            if start:
-                new_sel = _to_jst_date(start)
-        if new_sel and new_sel != st.session_state.cal_selected:
-            st.session_state.cal_selected = new_sel
+    nav1, nav2, nav3 = st.columns([1, 4, 1])
+    with nav1:
+        if st.button("◀", key="cal_prev"):
+            m = cal_m - 1
+            y = cal_y
+            if m < 1:
+                m, y = 12, y - 1
+            st.session_state.cal_month = (y, m)
             st.rerun()
+    with nav2:
+        st.markdown(
+            f"<div style='text-align:center;font-size:1.05rem;font-weight:bold;padding:6px 0;'>"
+            f"{cal_y}年{cal_m}月</div>",
+            unsafe_allow_html=True,
+        )
+    with nav3:
+        if st.button("▶", key="cal_next"):
+            m = cal_m + 1
+            y = cal_y
+            if m > 12:
+                m, y = 1, y + 1
+            st.session_state.cal_month = (y, m)
+            st.rerun()
+
+    _today_str = datetime.date.today().isoformat()
+    weeks = _cal_module.monthcalendar(cal_y, cal_m)
+    day_hdr = "".join(
+        f'<th style="text-align:center;padding:3px 2px;font-size:0.7rem;color:#555;">{d}</th>'
+        for d in ["月", "火", "水", "木", "金", "土", "日"]
+    )
+    rows_html = ""
+    for week in weeks:
+        row = ""
+        for day in week:
+            if day == 0:
+                row += '<td style="background:#f8f9fa;padding:3px;"></td>'
+            else:
+                ds = f"{cal_y}-{cal_m:02d}-{day:02d}"
+                day_races = [
+                    r for r in schedule_by_date.get(ds, [])
+                    if r.get("grade") in grade_filter
+                    and (surface_filter == "全" or surface_filter in r.get("distance", ""))
+                ]
+                badges = "".join(
+                    f'<span style="display:inline-block;'
+                    f'background:{GRADE_COLORS.get(r.get("grade", ""), {"bg": "#aaa"})["bg"]};'
+                    f'color:#fff;border-radius:2px;padding:0 2px;font-size:0.52rem;margin:1px 0;">'
+                    f'{r.get("grade", "")}</span>'
+                    for r in day_races
+                )
+                pred_dot = (
+                    '<span style="color:#1a73e8;font-size:0.6rem;">●</span>'
+                    if ds in pred_dates else ""
+                )
+                is_sel = ds == sel
+                is_today = ds == _today_str
+                if is_today:
+                    border = "2px solid #d4a017"
+                else:
+                    border = "2px solid #1a73e8" if is_sel else "1px solid #e8eaed"
+                bg = "#e8f0fe" if is_sel else "#fff"
+                row += (
+                    f'<td style="padding:2px 3px;border:{border};background:{bg};'
+                    f'min-width:28px;vertical-align:top;font-size:0.78rem;">'
+                    f'<div style="white-space:nowrap;">{day}{pred_dot}</div>'
+                    f'<div>{badges}</div>'
+                    f'</td>'
+                )
+        rows_html += f"<tr>{row}</tr>"
+
+    st.markdown(
+        f'<table style="border-collapse:collapse;width:100%;margin-bottom:6px;">'
+        f'<tr>{day_hdr}</tr>{rows_html}</table>',
+        unsafe_allow_html=True,
+    )
 
     # 凡例
     st.markdown(
         '<span style="background:#d4a017;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G1</span> '
         '<span style="background:#6c757d;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G2</span> '
         '<span style="background:#8b5e3c;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G3</span> '
-        '&nbsp;● 予測済み',
+        '&nbsp;<span style="color:#1a73e8;">●</span> 予測済み',
         unsafe_allow_html=True,
     )
+
+    # 日付選択
+    try:
+        _sel_date = datetime.date.fromisoformat(sel)
+    except Exception:
+        _sel_date = today
+    _picked = st.date_input("📅 日付を選択", value=_sel_date, key="cal_date_input")
+    if _picked.isoformat() != sel:
+        st.session_state.cal_selected = _picked.isoformat()
+        st.session_state.cal_month = (_picked.year, _picked.month)
+        st.rerun()
 
     # ── レース一覧 ──
     st.divider()

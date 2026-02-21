@@ -1,3 +1,2 @@
 streamlit==1.54.0
 pandas
-streamlit-calendar==1.4.0
