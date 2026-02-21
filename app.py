@@ -58,14 +58,14 @@ div[data-testid="column"]:nth-child(7) .stButton > button,
     /* スマホでは曜日ヘッダーを非表示 */
     .cal-week-header { display: none !important; }
     /* カレンダーナビ行のみ横並び固定 */
-    div:has(> .cal-nav-anchor) + div [data-testid="stHorizontalBlock"],
-    div:has(> .cal-nav-anchor) + div [data-testid="stColumns"] {
+    div:has(.cal-nav-anchor) + div [data-testid="stHorizontalBlock"],
+    div:has(.cal-nav-anchor) + div [data-testid="stColumns"] {
         flex-direction: row !important;
         flex-wrap: nowrap !important;
         align-items: center !important;
     }
-    div:has(> .cal-nav-anchor) + div [data-testid="column"],
-    div:has(> .cal-nav-anchor) + div [data-testid="stColumn"] {
+    div:has(.cal-nav-anchor) + div [data-testid="column"],
+    div:has(.cal-nav-anchor) + div [data-testid="stColumn"] {
         min-width: 0 !important;
     }
 }
