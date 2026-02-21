@@ -57,7 +57,17 @@ div[data-testid="column"]:nth-child(7) .stButton > button,
     h1 { font-size: 1.3rem !important; }
     /* スマホでは曜日ヘッダーを非表示 */
     .cal-week-header { display: none !important; }
-
+    /* カレンダーナビ行のみ横並び固定 */
+    div:has(> .cal-nav-anchor) + div [data-testid="stHorizontalBlock"],
+    div:has(> .cal-nav-anchor) + div [data-testid="stColumns"] {
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+    }
+    div:has(> .cal-nav-anchor) + div [data-testid="column"],
+    div:has(> .cal-nav-anchor) + div [data-testid="stColumn"] {
+        min-width: 0 !important;
+    }
 }
 </style>
 """,
@@ -602,6 +612,7 @@ with tab_cal:
         st.session_state.cal_month = (today.year, today.month)
     cal_y, cal_m = st.session_state.cal_month
 
+    st.markdown('<div class="cal-nav-anchor"></div>', unsafe_allow_html=True)
     nav1, nav2, nav3 = st.columns([1, 3, 1])
     with nav1:
         if st.button("◀", key="cal_prev"):
