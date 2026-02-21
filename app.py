@@ -523,6 +523,25 @@ def _match_pred(sched_name: str, pred_races: list[dict], used: set[str]) -> dict
     return None
 
 
+_JST = datetime.timezone(datetime.timedelta(hours=9))
+
+
+def _to_jst_date(s: str) -> str:
+    """UTC ISO文字列またはdate文字列をJST日付文字列 YYYY-MM-DD に変換"""
+    if not s:
+        return ""
+    if "T" not in s:
+        return s[:10]
+    try:
+        return (
+            datetime.datetime.fromisoformat(s.replace("Z", "+00:00"))
+            .astimezone(_JST)
+            .strftime("%Y-%m-%d")
+        )
+    except Exception:
+        return s[:10]
+
+
 STATUS_BG = {"結果あり": "#e6f4ea", "予測済み": "#e8f0fe", "未予測": "#fff3e0"}
 GRADE_COLORS = {
     "G1": {"bg": "#d4a017", "border": "#b8860b"},
@@ -622,20 +641,22 @@ with tab_cal:
                 .fc-event-title { font-size: 0.62rem; }
             }
         """,
-        key="pub_race_cal",
+        key="pub_race_cal_v2",
     )
 
     # クリックハンドリング (v1.4.0 API)
+    # dateStr はローカル日付文字列、date/start は UTC ISO → JST 変換が必要
     if cal_result:
         new_sel = None
         date_click = cal_result.get("dateClick")
         if date_click:
-            new_sel = date_click.get("dateStr") or date_click.get("date", "")[:10]
+            ds = (date_click.get("dateStr") or "")[:10]
+            new_sel = ds if ds else _to_jst_date(date_click.get("date", ""))
         event_click = cal_result.get("eventClick")
         if event_click and not new_sel:
             start = event_click.get("event", {}).get("start", "")
             if start:
-                new_sel = start[:10]
+                new_sel = _to_jst_date(start)
         if new_sel and new_sel != st.session_state.cal_selected:
             st.session_state.cal_selected = new_sel
             st.rerun()
