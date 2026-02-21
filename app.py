@@ -1,6 +1,5 @@
 """My Horses AI — 競馬予測公開ページ"""
 
-import calendar
 import datetime
 import json
 import re
@@ -8,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from streamlit_calendar import calendar as st_calendar
 
 APP_DIR = Path(__file__).resolve().parent
 PREDICTIONS_DIR = APP_DIR / "data" / "predictions"
@@ -49,10 +49,6 @@ st.title("🏇 My Horses AI — レース予測")
 
 # ─── Session State（カレンダー用） ──────────────────────────
 today = datetime.date.today()
-if "cal_year" not in st.session_state:
-    st.session_state.cal_year = today.year
-if "cal_month" not in st.session_state:
-    st.session_state.cal_month = today.month
 if "cal_selected" not in st.session_state:
     st.session_state.cal_selected = today.isoformat()
 
@@ -527,79 +523,12 @@ def _match_pred(sched_name: str, pred_races: list[dict], used: set[str]) -> dict
     return None
 
 
-GRADE_BADGES = {"G1": "🥇", "G2": "🥈", "G3": "🥉"}
 STATUS_BG = {"結果あり": "#e6f4ea", "予測済み": "#e8f0fe", "未予測": "#fff3e0"}
-
-
-def _render_calendar_html(
-    year: int, month: int,
-    schedule_by_date: dict, pred_dates: set,
-    grade_filter: list, surface_filter: str,
-    selected_str: str, today: datetime.date,
-) -> str:
-    """モバイル対応のカレンダーHTMLテーブルを生成する"""
-    cal_matrix = calendar.monthcalendar(year, month)
-    rows = []
-
-    header = "".join(
-        f'<th style="text-align:center;padding:4px 1px;font-size:0.78rem;font-weight:bold;'
-        f'color:{"#cc4444" if i == 6 else "#4444cc" if i == 5 else "#888"};">{dn}</th>'
-        for i, dn in enumerate(["月", "火", "水", "木", "金", "土", "日"])
-    )
-    rows.append(f"<tr>{header}</tr>")
-
-    for week in cal_matrix:
-        cells = []
-        for dow, day in enumerate(week):
-            if day == 0:
-                cells.append("<td></td>")
-                continue
-            date_obj = datetime.date(year, month, day)
-            date_str = date_obj.isoformat()
-
-            day_sched = [
-                r for r in schedule_by_date.get(date_str, [])
-                if r.get("grade") in grade_filter
-                and (surface_filter == "全" or surface_filter in r.get("distance", ""))
-            ]
-            has_pred = date_str in pred_dates
-            is_today = date_obj == today
-            is_selected = date_str == selected_str
-
-            badge = ""
-            if day_sched:
-                grades = [r["grade"] for r in day_sched]
-                top_g = next((g for g in ["G1", "G2", "G3"] if g in grades), None)
-                badge = GRADE_BADGES.get(top_g, "") if top_g else ""
-
-            if is_selected:
-                bg, fg, border = "#1565c0", "white", ""
-            elif is_today:
-                bg, fg, border = "transparent", "#1565c0", "border:2px solid #1565c0;"
-            else:
-                bg, fg, border = "transparent", "inherit", ""
-
-            inner = (
-                f'<div style="font-size:0.85rem;font-weight:{"bold" if is_today or is_selected else "normal"};'
-                f'color:{fg};">{day}</div>'
-            )
-            if badge:
-                inner += f'<div style="font-size:0.8rem;line-height:1.2;">{badge}</div>'
-            if has_pred:
-                dot_color = "white" if is_selected else "#1a73e8"
-                inner += f'<div style="font-size:0.55rem;color:{dot_color};">●</div>'
-
-            cell_style = (
-                f"text-align:center;padding:3px 1px;vertical-align:middle;"
-                f"background:{bg};border-radius:6px;{border}"
-            )
-            cells.append(f'<td style="{cell_style}">{inner}</td>')
-        rows.append(f'<tr>{"".join(cells)}</tr>')
-
-    return (
-        '<table style="width:100%;border-collapse:collapse;table-layout:fixed;'
-        f'margin-bottom:8px;">{"".join(rows)}</table>'
-    )
+GRADE_COLORS = {
+    "G1": {"bg": "#d4a017", "border": "#b8860b"},
+    "G2": {"bg": "#6c757d", "border": "#495057"},
+    "G3": {"bg": "#8b5e3c", "border": "#6b4421"},
+}
 
 
 with tab_cal:
@@ -647,72 +576,82 @@ with tab_cal:
         merged.append({"sched": None, "pred": pr})
         used_pred_ids.add(rid)
 
+    # イベントリスト構築
+    events: list[dict] = []
+    for date_str, races in schedule_by_date.items():
+        for race in races:
+            grade = race.get("grade", "")
+            if grade not in grade_filter:
+                continue
+            dist = race.get("distance", "")
+            if surface_filter != "全" and not dist.startswith(surface_filter):
+                continue
+            color = GRADE_COLORS.get(grade, {"bg": "#4a90d9", "border": "#2a70b9"})
+            title = ("● " if date_str in pred_dates else "") + race["race_name"]
+            events.append({
+                "title": title,
+                "start": date_str,
+                "backgroundColor": color["bg"],
+                "borderColor": color["border"],
+                "textColor": "#fff",
+            })
+    events.sort(key=lambda x: x["start"])
+
     # ── 内タブ ──
     inner_cal, inner_list = st.tabs(["📅 カレンダー", f"📋 レース一覧（{sel}）"])
 
-    # ── 内タブ1: ミニカレンダー ──
+    # ── 内タブ1: インタラクティブカレンダー ──
     with inner_cal:
-        year = st.session_state.cal_year
-        month = st.session_state.cal_month
-
-        nav1, nav2, nav3 = st.columns([1, 4, 1])
-        with nav1:
-            if st.button("◀", key="pub_prev_m"):
-                if month == 1:
-                    st.session_state.cal_year -= 1
-                    st.session_state.cal_month = 12
-                else:
-                    st.session_state.cal_month -= 1
-                st.rerun()
-        with nav2:
-            st.markdown(
-                f"<h4 style='text-align:center;margin:4px 0'>{year}年{month}月</h4>",
-                unsafe_allow_html=True,
-            )
-        with nav3:
-            if st.button("▶", key="pub_next_m"):
-                if month == 12:
-                    st.session_state.cal_year += 1
-                    st.session_state.cal_month = 1
-                else:
-                    st.session_state.cal_month += 1
-                st.rerun()
-
-        # 曜日ヘッダー
-        hdr_cols = st.columns(7)
-        for i, dn in enumerate(["月", "火", "水", "木", "金", "土", "日"]):
-            color = "#cc4444" if i == 6 else ("#4444cc" if i == 5 else "inherit")
-            hdr_cols[i].markdown(
-                f"<div style='text-align:center;font-weight:bold;"
-                f"font-size:0.8em;color:{color}'>{dn}</div>",
-                unsafe_allow_html=True,
-            )
-
-        # HTML カレンダー（モバイル対応・固定グリッド）
-        st.markdown(
-            _render_calendar_html(
-                year, month, schedule_by_date, pred_dates,
-                grade_filter, surface_filter,
-                st.session_state.cal_selected, today,
-            ),
-            unsafe_allow_html=True,
+        cal_result = st_calendar(
+            events=events,
+            options={
+                "headerToolbar": {
+                    "left": "prev,next today",
+                    "center": "title",
+                    "right": "",
+                },
+                "initialView": "dayGridMonth",
+                "initialDate": sel,
+                "locale": "ja",
+                "height": 520,
+                "selectable": True,
+                "editable": False,
+            },
+            custom_css="""
+                .fc-event-title { font-size: 0.72rem; overflow: hidden; text-overflow: ellipsis; }
+                .fc-toolbar-title { font-size: 1.1rem; }
+                .fc-button { font-size: 0.8rem !important; padding: 0.2rem 0.5rem !important; }
+                @media (max-width: 640px) {
+                    .fc-toolbar-title { font-size: 0.85rem !important; }
+                    .fc-button { font-size: 0.65rem !important; padding: 0.15rem 0.25rem !important; }
+                    .fc-event-title { font-size: 0.62rem; }
+                }
+            """,
+            key="pub_race_cal",
         )
 
-        # 日付選択
-        new_date = st.date_input(
-            "日付を選択",
-            value=datetime.date.fromisoformat(st.session_state.cal_selected),
-            key="pub_cal_date_input",
-            label_visibility="collapsed",
-        )
-        if new_date.isoformat() != st.session_state.cal_selected:
-            st.session_state.cal_selected = new_date.isoformat()
-            st.session_state.cal_year = new_date.year
-            st.session_state.cal_month = new_date.month
-            st.rerun()
+        # クリックハンドリング
+        if cal_result:
+            cb = cal_result.get("callback")
+            new_sel = None
+            if cb == "dateClick":
+                d = cal_result.get("dateClicked", "")
+                if d:
+                    new_sel = d[:10]
+            elif cb == "eventClick":
+                d = cal_result.get("eventClick", {}).get("event", {}).get("start", "")
+                if d:
+                    new_sel = d[:10]
+            if new_sel and new_sel != st.session_state.cal_selected:
+                st.session_state.cal_selected = new_sel
+                st.rerun()
 
+        # 凡例
         st.markdown(
-            "<small>🥇=G1 &nbsp; 🥈=G2 &nbsp; 🥉=G3 &nbsp; ●=予測済み &nbsp; [日]=今日</small>",
+            '<span style="background:#d4a017;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G1</span> '
+            '<span style="background:#6c757d;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G2</span> '
+            '<span style="background:#8b5e3c;color:#fff;padding:1px 5px;border-radius:3px;font-size:0.75rem;">G3</span> '
+            '&nbsp;● 予測済み',
             unsafe_allow_html=True,
         )
 
