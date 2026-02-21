@@ -531,6 +531,77 @@ GRADE_BADGES = {"G1": "🥇", "G2": "🥈", "G3": "🥉"}
 STATUS_BG = {"結果あり": "#e6f4ea", "予測済み": "#e8f0fe", "未予測": "#fff3e0"}
 
 
+def _render_calendar_html(
+    year: int, month: int,
+    schedule_by_date: dict, pred_dates: set,
+    grade_filter: list, surface_filter: str,
+    selected_str: str, today: datetime.date,
+) -> str:
+    """モバイル対応のカレンダーHTMLテーブルを生成する"""
+    cal_matrix = calendar.monthcalendar(year, month)
+    rows = []
+
+    header = "".join(
+        f'<th style="text-align:center;padding:4px 1px;font-size:0.78rem;font-weight:bold;'
+        f'color:{"#cc4444" if i == 6 else "#4444cc" if i == 5 else "#888"};">{dn}</th>'
+        for i, dn in enumerate(["月", "火", "水", "木", "金", "土", "日"])
+    )
+    rows.append(f"<tr>{header}</tr>")
+
+    for week in cal_matrix:
+        cells = []
+        for dow, day in enumerate(week):
+            if day == 0:
+                cells.append("<td></td>")
+                continue
+            date_obj = datetime.date(year, month, day)
+            date_str = date_obj.isoformat()
+
+            day_sched = [
+                r for r in schedule_by_date.get(date_str, [])
+                if r.get("grade") in grade_filter
+                and (surface_filter == "全" or surface_filter in r.get("distance", ""))
+            ]
+            has_pred = date_str in pred_dates
+            is_today = date_obj == today
+            is_selected = date_str == selected_str
+
+            badge = ""
+            if day_sched:
+                grades = [r["grade"] for r in day_sched]
+                top_g = next((g for g in ["G1", "G2", "G3"] if g in grades), None)
+                badge = GRADE_BADGES.get(top_g, "") if top_g else ""
+
+            if is_selected:
+                bg, fg, border = "#1565c0", "white", ""
+            elif is_today:
+                bg, fg, border = "transparent", "#1565c0", "border:2px solid #1565c0;"
+            else:
+                bg, fg, border = "transparent", "inherit", ""
+
+            inner = (
+                f'<div style="font-size:0.85rem;font-weight:{"bold" if is_today or is_selected else "normal"};'
+                f'color:{fg};">{day}</div>'
+            )
+            if badge:
+                inner += f'<div style="font-size:0.8rem;line-height:1.2;">{badge}</div>'
+            if has_pred:
+                dot_color = "white" if is_selected else "#1a73e8"
+                inner += f'<div style="font-size:0.55rem;color:{dot_color};">●</div>'
+
+            cell_style = (
+                f"text-align:center;padding:3px 1px;vertical-align:middle;"
+                f"background:{bg};border-radius:6px;{border}"
+            )
+            cells.append(f'<td style="{cell_style}">{inner}</td>')
+        rows.append(f'<tr>{"".join(cells)}</tr>')
+
+    return (
+        '<table style="width:100%;border-collapse:collapse;table-layout:fixed;'
+        f'margin-bottom:8px;">{"".join(rows)}</table>'
+    )
+
+
 with tab_cal:
     schedule_list = _load_schedule()
     pred_map_cal = _load_pred_map()
@@ -617,48 +688,28 @@ with tab_cal:
                 unsafe_allow_html=True,
             )
 
-        # カレンダーグリッド
-        cal_matrix = calendar.monthcalendar(year, month)
-        for week in cal_matrix:
-            day_cols = st.columns(7)
-            for dow, day in enumerate(week):
-                if day == 0:
-                    day_cols[dow].write("")
-                    continue
-                date_obj = datetime.date(year, month, day)
-                date_str = date_obj.isoformat()
+        # HTML カレンダー（モバイル対応・固定グリッド）
+        st.markdown(
+            _render_calendar_html(
+                year, month, schedule_by_date, pred_dates,
+                grade_filter, surface_filter,
+                st.session_state.cal_selected, today,
+            ),
+            unsafe_allow_html=True,
+        )
 
-                day_sched_cell = [
-                    r for r in schedule_by_date.get(date_str, [])
-                    if r.get("grade") in grade_filter
-                    and (surface_filter == "全" or surface_filter in r.get("distance", ""))
-                ]
-                has_pred = date_str in pred_dates
-                is_today = date_obj == today
-                is_selected = date_str == st.session_state.cal_selected
-
-                badge = ""
-                if day_sched_cell:
-                    grades = [r["grade"] for r in day_sched_cell]
-                    top_g = next((g for g in ["G1", "G2", "G3"] if g in grades), None)
-                    badge = GRADE_BADGES.get(top_g, "") if top_g else ""
-
-                day_label = f"[{day}]" if is_today else str(day)
-                lines = [day_label]
-                if badge:
-                    lines.append(badge)
-                if has_pred:
-                    lines.append("●")
-                label = "\n".join(lines)
-
-                if day_cols[dow].button(
-                    label,
-                    key=f"pub_d_{date_str}",
-                    use_container_width=True,
-                    type="primary" if is_selected else "secondary",
-                ):
-                    st.session_state.cal_selected = date_str
-                    st.rerun()
+        # 日付選択
+        new_date = st.date_input(
+            "日付を選択",
+            value=datetime.date.fromisoformat(st.session_state.cal_selected),
+            key="pub_cal_date_input",
+            label_visibility="collapsed",
+        )
+        if new_date.isoformat() != st.session_state.cal_selected:
+            st.session_state.cal_selected = new_date.isoformat()
+            st.session_state.cal_year = new_date.year
+            st.session_state.cal_month = new_date.month
+            st.rerun()
 
         st.markdown(
             "<small>🥇=G1 &nbsp; 🥈=G2 &nbsp; 🥉=G3 &nbsp; ●=予測済み &nbsp; [日]=今日</small>",
