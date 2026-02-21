@@ -1,6 +1,9 @@
 """My Horses AI — 競馬予測公開ページ"""
 
+import calendar
+import datetime
 import json
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -9,12 +12,54 @@ import streamlit as st
 APP_DIR = Path(__file__).resolve().parent
 PREDICTIONS_DIR = APP_DIR / "data" / "predictions"
 STRATEGY_DIR = APP_DIR / "data" / "strategy"
+SCHEDULE_PATH = APP_DIR / "data" / "2026重賞レーススケジュール.txt"
 
 st.set_page_config(page_title="My Horses AI 予測", page_icon="🏇", layout="wide")
+
+# ─── モバイル対応CSS ──────────────────────────────────────────
+st.markdown(
+    """
+<style>
+div[data-testid="column"] .stButton > button {
+    padding: 2px 0 !important;
+    font-size: 0.72rem !important;
+    line-height: 1.35 !important;
+    white-space: pre-wrap !important;
+    text-align: center !important;
+    min-height: 48px !important;
+}
+@media (max-width: 640px) {
+    .block-container {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        padding-top: 0.5rem !important;
+    }
+    div[data-testid="column"] .stButton > button {
+        font-size: 0.6rem !important;
+        min-height: 44px !important;
+    }
+    h1 { font-size: 1.3rem !important; }
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
 st.title("🏇 My Horses AI — レース予測")
 
+# ─── Session State（カレンダー用） ──────────────────────────
+today = datetime.date.today()
+if "cal_year" not in st.session_state:
+    st.session_state.cal_year = today.year
+if "cal_month" not in st.session_state:
+    st.session_state.cal_month = today.month
+if "cal_selected" not in st.session_state:
+    st.session_state.cal_selected = today.isoformat()
+
 # ── タブ構成 ──
-tab_pred, tab_fight, tab_bt = st.tabs(["📁 予測一覧", "🔥 勝負レース", "📈 バックテスト成績"])
+tab_pred, tab_fight, tab_bt, tab_cal = st.tabs(
+    ["📁 予測一覧", "🔥 勝負レース", "📈 バックテスト成績", "📅 カレンダー"]
+)
 
 # ====================================================================
 # 共通: 予測JSON読み込み
@@ -166,7 +211,7 @@ with tab_pred:
                                     use_container_width=True, hide_index=True,
                                 )
 
-                        # レース結果
+                        # レース結果（JSONに埋め込まれたデータを使用）
                         result_data = race.get("result")
                         if result_data:
                             st.markdown("---")
@@ -372,7 +417,7 @@ with tab_bt:
 
         st.dataframe(
             display.style
-            .applymap(_color_roi, subset=["回収率"])
+            .map(_color_roi, subset=["回収率"])
             .format({"的中率": "{:.1f}%", "回収率": "{:.1f}%", "収支": "{:+,}円"}),
             use_container_width=True, hide_index=True,
         )
@@ -399,3 +444,433 @@ with tab_bt:
                 ),
                 use_container_width=True, hide_index=True,
             )
+
+# ====================================================================
+# タブ4: レースカレンダー
+# ====================================================================
+
+# ─── スケジュール解析（インライン） ──────────────────────────
+@st.cache_data
+def _load_schedule() -> list[dict]:
+    """TSVスケジュールファイルをパースして返す"""
+    races: list[dict] = []
+    if not SCHEDULE_PATH.exists():
+        return races
+    with open(SCHEDULE_PATH, encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            line = line.rstrip("\n")
+            if i == 0 or not line.strip():
+                continue
+            parts = line.split("\t")
+            if len(parts) < 7:
+                continue
+            date_str, race_name, grade, venue, distance, condition, weight = parts[:7]
+            m = re.match(r"(\d{2})/(\d{2})", date_str)
+            if not m:
+                continue
+            month_n, day_n = int(m.group(1)), int(m.group(2))
+            races.append({
+                "date": datetime.date(2026, month_n, day_n),
+                "race_name": race_name,
+                "grade": grade,
+                "venue": venue,
+                "distance": distance,
+            })
+    return races
+
+
+@st.cache_data
+def _load_pred_map() -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    if not PREDICTIONS_DIR.exists():
+        return result
+    for jf in sorted(PREDICTIONS_DIR.glob("*.json")):
+        try:
+            with open(jf, encoding="utf-8") as f:
+                result[jf.stem] = json.load(f)
+        except Exception:
+            pass
+    return result
+
+
+def _parse_dist_num(dist_str: str) -> int:
+    m = re.search(r"(\d+)", dist_str or "")
+    return int(m.group(1)) if m else 0
+
+
+def _is_promising(pred_race: dict) -> bool:
+    dist_str = pred_race.get("distance", "")
+    if not dist_str.startswith("芝") or _parse_dist_num(dist_str) < 1800:
+        return False
+    for p in pred_race.get("predictions", []):
+        if p.get("人気") == 1:
+            return (p.get("予測順位") or 99) >= 4
+    return False
+
+
+def _get_status(pred_race: dict | None) -> str:
+    if pred_race is None:
+        return "未予測"
+    if pred_race.get("result"):
+        return "結果あり"
+    return "予測済み"
+
+
+def _match_pred(sched_name: str, pred_races: list[dict], used: set[str]) -> dict | None:
+    for pr in pred_races:
+        rid = pr.get("race_id", "")
+        if rid in used:
+            continue
+        pname = pr.get("race_name", "")
+        if sched_name in pname or pname in sched_name:
+            return pr
+    return None
+
+
+GRADE_BADGES = {"G1": "🥇", "G2": "🥈", "G3": "🥉"}
+STATUS_BG = {"結果あり": "#e6f4ea", "予測済み": "#e8f0fe", "未予測": "#fff3e0"}
+
+
+with tab_cal:
+    schedule_list = _load_schedule()
+    pred_map_cal = _load_pred_map()
+
+    schedule_by_date: dict[str, list[dict]] = {}
+    for r in schedule_list:
+        ds = r["date"].isoformat()
+        schedule_by_date.setdefault(ds, []).append(r)
+    pred_dates = set(pred_map_cal.keys())
+
+    # フィルター
+    cf1, cf2 = st.columns(2)
+    with cf1:
+        grade_filter = st.multiselect(
+            "グレード", ["G1", "G2", "G3"], default=["G1", "G2", "G3"], key="cal_grade"
+        )
+    with cf2:
+        surface_filter = st.selectbox("馬場", ["全", "芝", "ダート"], key="cal_surface")
+
+    # 選択日データを先に計算（2タブ共有）
+    sel = st.session_state.cal_selected
+    day_sched_filtered = [
+        r for r in schedule_by_date.get(sel, [])
+        if r.get("grade") in grade_filter
+        and (surface_filter == "全" or surface_filter in r.get("distance", ""))
+    ]
+    day_pred_data = pred_map_cal.get(sel)
+    pred_races = (day_pred_data or {}).get("races", [])
+
+    merged: list[dict] = []
+    used_pred_ids: set[str] = set()
+    for sched in day_sched_filtered:
+        matched = _match_pred(sched["race_name"], pred_races, used_pred_ids)
+        if matched:
+            used_pred_ids.add(matched.get("race_id", ""))
+        merged.append({"sched": sched, "pred": matched})
+    for pr in pred_races:
+        rid = pr.get("race_id", "")
+        if rid in used_pred_ids:
+            continue
+        if surface_filter != "全" and not pr.get("distance", "").startswith(surface_filter):
+            continue
+        merged.append({"sched": None, "pred": pr})
+        used_pred_ids.add(rid)
+
+    # ── 内タブ ──
+    inner_cal, inner_list = st.tabs(["📅 カレンダー", f"📋 レース一覧（{sel}）"])
+
+    # ── 内タブ1: ミニカレンダー ──
+    with inner_cal:
+        year = st.session_state.cal_year
+        month = st.session_state.cal_month
+
+        nav1, nav2, nav3 = st.columns([1, 4, 1])
+        with nav1:
+            if st.button("◀", key="pub_prev_m"):
+                if month == 1:
+                    st.session_state.cal_year -= 1
+                    st.session_state.cal_month = 12
+                else:
+                    st.session_state.cal_month -= 1
+                st.rerun()
+        with nav2:
+            st.markdown(
+                f"<h4 style='text-align:center;margin:4px 0'>{year}年{month}月</h4>",
+                unsafe_allow_html=True,
+            )
+        with nav3:
+            if st.button("▶", key="pub_next_m"):
+                if month == 12:
+                    st.session_state.cal_year += 1
+                    st.session_state.cal_month = 1
+                else:
+                    st.session_state.cal_month += 1
+                st.rerun()
+
+        # 曜日ヘッダー
+        hdr_cols = st.columns(7)
+        for i, dn in enumerate(["月", "火", "水", "木", "金", "土", "日"]):
+            color = "#cc4444" if i == 6 else ("#4444cc" if i == 5 else "inherit")
+            hdr_cols[i].markdown(
+                f"<div style='text-align:center;font-weight:bold;"
+                f"font-size:0.8em;color:{color}'>{dn}</div>",
+                unsafe_allow_html=True,
+            )
+
+        # カレンダーグリッド
+        cal_matrix = calendar.monthcalendar(year, month)
+        for week in cal_matrix:
+            day_cols = st.columns(7)
+            for dow, day in enumerate(week):
+                if day == 0:
+                    day_cols[dow].write("")
+                    continue
+                date_obj = datetime.date(year, month, day)
+                date_str = date_obj.isoformat()
+
+                day_sched_cell = [
+                    r for r in schedule_by_date.get(date_str, [])
+                    if r.get("grade") in grade_filter
+                    and (surface_filter == "全" or surface_filter in r.get("distance", ""))
+                ]
+                has_pred = date_str in pred_dates
+                is_today = date_obj == today
+                is_selected = date_str == st.session_state.cal_selected
+
+                badge = ""
+                if day_sched_cell:
+                    grades = [r["grade"] for r in day_sched_cell]
+                    top_g = next((g for g in ["G1", "G2", "G3"] if g in grades), None)
+                    badge = GRADE_BADGES.get(top_g, "") if top_g else ""
+
+                day_label = f"[{day}]" if is_today else str(day)
+                lines = [day_label]
+                if badge:
+                    lines.append(badge)
+                if has_pred:
+                    lines.append("●")
+                label = "\n".join(lines)
+
+                if day_cols[dow].button(
+                    label,
+                    key=f"pub_d_{date_str}",
+                    use_container_width=True,
+                    type="primary" if is_selected else "secondary",
+                ):
+                    st.session_state.cal_selected = date_str
+                    st.rerun()
+
+        st.markdown(
+            "<small>🥇=G1 &nbsp; 🥈=G2 &nbsp; 🥉=G3 &nbsp; ●=予測済み &nbsp; [日]=今日</small>",
+            unsafe_allow_html=True,
+        )
+
+        # 選択日サマリー
+        st.divider()
+        st.markdown(f"**📅 選択中: {sel}**")
+        if merged:
+            for item in merged:
+                sched = item["sched"]
+                pred = item["pred"]
+                name = (sched or {}).get("race_name") or (pred or {}).get("race_name", "−")
+                grade = (sched or {}).get("grade") or (pred or {}).get("grade", "")
+                status = _get_status(pred)
+                promising = "🔥 " if (pred and _is_promising(pred)) else ""
+                grade_str = f"({grade})" if grade else ""
+                st.markdown(f"- {promising}**{name}** {grade_str} — {status}")
+            st.info("詳細は「📋 レース一覧」タブをご確認ください")
+        else:
+            st.caption("この日の対象レースはありません")
+
+    # ── 内タブ2: レース一覧 ──
+    with inner_list:
+        st.subheader(f"📋 {sel} のレース")
+
+        if day_pred_data:
+            pred_mode = day_pred_data.get("mode", "")
+            gen_at = day_pred_data.get("generated_at", "")
+            if pred_mode == "morning":
+                st.caption(f"🌅 当日更新予測 — {gen_at}")
+            elif pred_mode == "evening":
+                st.caption(f"🌙 前日予測 — {gen_at}")
+            elif gen_at:
+                st.caption(f"手動予測 — {gen_at}")
+
+        if not merged:
+            st.info("この日の対象レースはありません（重賞スケジュール未登録 / 予測なし）。")
+        else:
+            # サマリーテーブル
+            table_rows = []
+            for item in merged:
+                sched = item["sched"]
+                pred = item["pred"]
+                name = (sched or {}).get("race_name") or (pred or {}).get("race_name", "−")
+                grade = (sched or {}).get("grade") or (pred or {}).get("grade", "")
+                venue = (sched or {}).get("venue") or (pred or {}).get("venue", "")
+                distance = (sched or {}).get("distance") or (pred or {}).get("distance", "")
+                status = _get_status(pred)
+                conf_label = (pred or {}).get("confidence", {}).get("label", "−") if pred else "−"
+                promising = "🔥" if (pred and _is_promising(pred)) else ""
+                table_rows.append({
+                    "レース名": name, "G": grade, "場": venue,
+                    "距離": distance, "状態": status, "自信度": conf_label, "有望": promising,
+                })
+
+            table_df = pd.DataFrame(table_rows)
+
+            def _style_status(val: str) -> str:
+                bg = STATUS_BG.get(val, "white")
+                return f"background-color: {bg}; color: #1a1a1a"
+
+            st.dataframe(
+                table_df.style.map(_style_status, subset=["状態"]),
+                use_container_width=True, hide_index=True,
+            )
+
+            st.markdown("---")
+            st.markdown("**詳細**")
+
+            for item in merged:
+                sched = item["sched"]
+                pred = item["pred"]
+                name = (sched or {}).get("race_name") or (pred or {}).get("race_name", "−")
+                grade = (sched or {}).get("grade") or (pred or {}).get("grade", "")
+                venue = (sched or {}).get("venue") or (pred or {}).get("venue", "")
+                distance = (sched or {}).get("distance") or (pred or {}).get("distance", "")
+                status = _get_status(pred)
+                promising_flag = pred and _is_promising(pred)
+
+                exp_header = f"{'🔥 ' if promising_flag else ''}{name}"
+                if grade:
+                    exp_header += f" ({grade})"
+                if venue or distance:
+                    exp_header += f" — {venue} {distance}"
+                exp_header += f"  [{status}]"
+
+                with st.expander(exp_header, expanded=False):
+                    if promising_flag:
+                        st.info(
+                            "🔥 **芝×1800m以上×乖離シグナル**: モデルが1番人気を4位以下に評価。"
+                            "バックテストで回収率124%（ワイド）の有望パターンです。"
+                        )
+
+                    if pred is None:
+                        st.info("予測データなし")
+                        if sched:
+                            st.markdown(f"**場所**: {sched.get('venue', '')} {sched.get('distance', '')}")
+                        continue
+
+                    predicted_at = pred.get("predicted_at", "")
+                    if predicted_at:
+                        st.caption(f"予測日時: {predicted_at}")
+
+                    conf = pred.get("confidence", {})
+                    conf_label_v = conf.get("label", "")
+                    if conf_label_v and conf_label_v != "−":
+                        conf_icons = {3: "🔥", 2: "⚡", 1: "💧", 0: "❄️"}
+                        conf_colors = {3: "red", 2: "orange", 1: "blue", 0: "gray"}
+                        level = conf.get("level", 0)
+                        ci = conf_icons.get(level, "")
+                        cc = conf_colors.get(level, "gray")
+                        st.markdown(f"**{ci} 勝負度: :{cc}[{conf_label_v}]**")
+                        reason = conf.get("reason", "")
+                        if reason:
+                            st.caption(reason)
+
+                    preds = pred.get("predictions", [])
+                    if preds:
+                        pred_df = (
+                            pd.DataFrame(preds)
+                            .sort_values("予測順位")
+                            .reset_index(drop=True)
+                        )
+                        for col in ["単勝", "期待値", "人気"]:
+                            if col in pred_df.columns:
+                                pred_df[col] = pd.to_numeric(pred_df[col], errors="coerce")
+
+                        disp_cols = [
+                            c for c in
+                            ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "期待値"]
+                            if c in pred_df.columns
+                        ]
+                        disp_df = pred_df[disp_cols].head(5).copy()
+                        if "単勝" in disp_df.columns:
+                            disp_df = disp_df.rename(columns={"単勝": "単勝オッズ"})
+                        fmt: dict[str, str] = {}
+                        if "単勝オッズ" in disp_df.columns:
+                            fmt["単勝オッズ"] = "{:.1f}"
+                        if "期待値" in disp_df.columns:
+                            fmt["期待値"] = "{:.2f}"
+
+                        st.dataframe(
+                            disp_df.style.format(fmt, na_rep="-"),
+                            use_container_width=True, hide_index=True,
+                        )
+
+                        top3 = pred_df.head(3)
+                        medal_cols = st.columns(min(3, len(top3)))
+                        medals = ["🥇", "🥈", "🥉"]
+                        for i, (_, row) in enumerate(top3.iterrows()):
+                            with medal_cols[i]:
+                                st.metric(
+                                    f"{medals[i]} {row['馬名']}",
+                                    f"{row['勝率(%)']}%",
+                                    f"馬番 {int(row['馬番'])}",
+                                )
+
+                    rec = pred.get("recommendation")
+                    if rec:
+                        bets = rec.get("推奨買い目", [])
+                        if bets:
+                            st.markdown("**推奨買い目**")
+                            for bet in bets:
+                                st.markdown(
+                                    f"- **{bet['馬券種']}** {bet['買い目']}  \n  _{bet['理由']}_"
+                                )
+
+                    # レース結果（JSON埋め込み）
+                    result_data = pred.get("result")
+                    if result_data:
+                        st.markdown("---")
+                        st.markdown("**📊 レース結果（上位5着）**")
+                        result_df = pd.DataFrame(result_data)
+                        if "着順" in result_df.columns and len(result_df) > 0:
+                            result_df["着順"] = pd.to_numeric(result_df["着順"], errors="coerce")
+                            valid = result_df[result_df["着順"].notna()].copy()
+                            valid["着順"] = valid["着順"].astype(int)
+                            valid = valid.sort_values("着順").head(5)
+
+                            disp_result_cols = [
+                                c for c in ["着順", "馬番", "馬名", "タイム", "単勝", "人気"]
+                                if c in valid.columns
+                            ]
+                            result_disp = valid[disp_result_cols].copy()
+                            if "単勝" in result_disp.columns:
+                                result_disp = result_disp.rename(columns={"単勝": "単勝オッズ"})
+                            st.dataframe(result_disp, use_container_width=True, hide_index=True)
+
+                            if preds and len(valid) > 0:
+                                pred_df_top = (
+                                    pd.DataFrame(preds)
+                                    .sort_values("予測順位")
+                                    .reset_index(drop=True)
+                                )
+                                pred_top = pred_df_top.iloc[0]
+                                winner = valid.loc[valid["着順"].idxmin()]
+                                pred_umaban = int(pred_top["馬番"])
+                                win_umaban = int(winner["馬番"])
+                                if pred_umaban == win_umaban:
+                                    st.success(
+                                        f"✅ 的中！ 予測1位 {pred_top['馬名']}"
+                                        f"（馬番{pred_umaban}）= 1着"
+                                    )
+                                else:
+                                    match = valid[valid["馬番"] == pred_umaban]
+                                    rank = (
+                                        int(match.iloc[0]["着順"]) if len(match) > 0 else "?"
+                                    )
+                                    st.error(
+                                        f"❌ 不的中 — 予測1位 {pred_top['馬名']}"
+                                        f"（馬番{pred_umaban}）→ {rank}着 / "
+                                        f"1着: {winner['馬名']}（馬番{win_umaban}）"
+                                    )
