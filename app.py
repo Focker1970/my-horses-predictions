@@ -476,7 +476,7 @@ with tab_bt:
 # ====================================================================
 
 # ─── スケジュール解析（インライン） ──────────────────────────
-@st.cache_data
+@st.cache_data(ttl=3600)
 def _load_schedule() -> list[dict]:
     """TSVスケジュールファイルをパースして返す"""
     races: list[dict] = []
@@ -505,7 +505,7 @@ def _load_schedule() -> list[dict]:
     return races
 
 
-@st.cache_data
+@st.cache_data(ttl=300)
 def _load_pred_map() -> dict[str, dict]:
     result: dict[str, dict] = {}
     if not PREDICTIONS_DIR.exists():
