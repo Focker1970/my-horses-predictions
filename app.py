@@ -534,6 +534,20 @@ def _is_promising(pred_race: dict) -> bool:
     return False
 
 
+def _is_dirt_chusho_agree(pred_race: dict) -> bool:
+    """ダート×1801〜2200m×一致（1番人気がモデルTop2以内）シグナル判定。"""
+    dist_str = pred_race.get("distance", "")
+    if not dist_str.startswith("ダート"):
+        return False
+    dist_num = _parse_dist_num(dist_str)
+    if not (1801 <= dist_num <= 2200):
+        return False
+    for p in pred_race.get("predictions", []):
+        if p.get("人気") == 1:
+            return (p.get("予測順位") or 99) <= 2
+    return False
+
+
 def _get_status(pred_race: dict | None) -> str:
     if pred_race is None:
         return "未予測"
@@ -738,8 +752,9 @@ with tab_cal:
             distance = (sched or {}).get("distance") or (pred or {}).get("distance", "")
             status = _get_status(pred)
             promising_flag = pred and _is_promising(pred)
+            dirt_chusho_flag = pred and _is_dirt_chusho_agree(pred)
 
-            exp_header = f"{'🔥 ' if promising_flag else ''}{name}"
+            exp_header = f"{'🔥 ' if promising_flag else ('💎 ' if dirt_chusho_flag else '')}{name}"
             if grade:
                 exp_header += f" ({grade})"
             if venue or distance:
@@ -751,6 +766,11 @@ with tab_cal:
                     st.info(
                         "🔥 **芝×1800m以上×乖離シグナル**: モデルが1番人気を4位以下に評価。"
                         "バックテストで回収率124%（ワイド）の有望パターンです。"
+                    )
+                if dirt_chusho_flag:
+                    st.info(
+                        "💎 **ダート×中距離×一致シグナル**: 1番人気がモデルTop2以内で一致。"
+                        "バックテストで回収率113%（ワイド 1番人気×2番人気）の有望パターンです。"
                     )
 
                 if pred is None:
