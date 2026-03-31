@@ -847,6 +847,20 @@ with tab_cal:
                                 f"- **{bet['馬券種']}** {bet['買い目']}  \n  _{bet['理由']}_"
                             )
 
+                # AIコメント
+                ai_comments = pred.get("ai_comments", {})
+                if ai_comments:
+                    with st.expander("🤖 AIコメント（各馬の予測要因）", expanded=False):
+                        preds_sorted = sorted(preds, key=lambda x: x.get("予測順位", 99))
+                        for p in preds_sorted:
+                            horse = p["馬名"]
+                            comment = ai_comments.get(horse, "")
+                            if comment:
+                                rank = p.get("予測順位", "")
+                                medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"**{rank}位**")
+                                st.markdown(f"{medal} **{horse}**")
+                                st.markdown(f"> {comment}")
+
                 # レース結果（JSON埋め込み）
                 result_data = pred.get("result")
                 if result_data:
