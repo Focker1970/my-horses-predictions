@@ -260,47 +260,45 @@ with tab_pred:
                                     use_container_width=True, hide_index=True,
                                 )
 
-                        # SHAP要因（前日 / 当日 比較対応）
+                        # SHAP要因（3段階対応）
                         shap_evening = race.get("shap_factors_evening") or race.get("shap_factors", {})
+                        shap_early = race.get("shap_factors_morning_early", {})
                         shap_morning = race.get("shap_factors_morning", {})
-                        has_both = bool(shap_evening) and bool(shap_morning)
-                        shap_any = shap_evening or shap_morning
-                        if shap_any and preds:
-                            label = "📊 各馬のSHAP要因（前日 / 当日）" if has_both else "📊 各馬のSHAP要因（上位5項目）"
+                        shap_cols = [(k, v) for k, v in [
+                            ("🌙 前日", shap_evening),
+                            ("☀️ 10時", shap_early),
+                            ("🌅 13時", shap_morning),
+                        ] if v]
+                        if shap_cols and preds:
+                            if len(shap_cols) >= 2:
+                                label = f"📊 各馬のSHAP要因（{'・'.join(k for k,_ in shap_cols)}）"
+                            else:
+                                label = "📊 各馬のSHAP要因（上位5項目）"
                             with st.expander(label, expanded=False):
-                                if has_both:
-                                    st.caption("🌙 前日予測 → 🌅 当日予測（変化を確認できます）")
+                                if len(shap_cols) >= 2:
+                                    st.caption(" → ".join(k for k, _ in shap_cols) + "（変化を確認できます）")
                                 for p in sorted(preds, key=lambda x: x.get("予測順位", 99)):
                                     horse = p["馬名"]
-                                    f_eve = shap_evening.get(horse) if shap_evening else None
-                                    f_morn = shap_morning.get(horse) if shap_morning else None
-                                    if not f_eve and not f_morn:
+                                    horse_factors = [(k, v.get(horse)) for k, v in shap_cols]
+                                    if not any(f for _, f in horse_factors):
                                         continue
                                     rank = p.get("予測順位", "")
                                     medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"**{rank}位**")
                                     st.markdown(f"{medal} **{horse}**（勝率 {p['勝率(%)']:.1f}%）")
-                                    if has_both:
-                                        col_eve, col_morn = st.columns(2)
-                                        with col_eve:
-                                            st.caption("🌙 前日予測")
-                                            if f_eve:
-                                                st.markdown("🔺 プラス")
-                                                for f in f_eve.get("positive", []):
-                                                    st.markdown(f"- {f['label']}: **{f['value']}**")
-                                                st.markdown("🔻 マイナス")
-                                                for f in f_eve.get("negative", []):
-                                                    st.markdown(f"- {f['label']}: **{f['value']}**")
-                                        with col_morn:
-                                            st.caption("🌅 当日予測")
-                                            if f_morn:
-                                                st.markdown("🔺 プラス")
-                                                for f in f_morn.get("positive", []):
-                                                    st.markdown(f"- {f['label']}: **{f['value']}**")
-                                                st.markdown("🔻 マイナス")
-                                                for f in f_morn.get("negative", []):
-                                                    st.markdown(f"- {f['label']}: **{f['value']}**")
+                                    if len(shap_cols) >= 2:
+                                        cols_st = st.columns(len(shap_cols))
+                                        for i, (col_label, factors) in enumerate(horse_factors):
+                                            with cols_st[i]:
+                                                st.caption(col_label)
+                                                if factors:
+                                                    st.markdown("🔺 プラス")
+                                                    for f in factors.get("positive", []):
+                                                        st.markdown(f"- {f['label']}: **{f['value']}**")
+                                                    st.markdown("🔻 マイナス")
+                                                    for f in factors.get("negative", []):
+                                                        st.markdown(f"- {f['label']}: **{f['value']}**")
                                     else:
-                                        factors = f_eve or f_morn
+                                        factors = horse_factors[0][1]
                                         cols2 = st.columns(2)
                                         with cols2[0]:
                                             st.markdown("🔺 プラス評価")
@@ -941,52 +939,51 @@ with tab_cal:
                             )
 
                 # SHAP要因（前日 / 当日 比較対応）
+                # SHAP要因（3段階対応）
                 shap_evening = pred.get("shap_factors_evening") or pred.get("shap_factors", {})
+                shap_early = pred.get("shap_factors_morning_early", {})
                 shap_morning = pred.get("shap_factors_morning", {})
-                has_both = bool(shap_evening) and bool(shap_morning)
-                shap_any = shap_evening or shap_morning
-                if shap_any and preds:
-                    label = "📊 各馬のSHAP要因（前日 / 当日）" if has_both else "📊 各馬のSHAP要因（上位5項目）"
+                shap_cols = [(k, v) for k, v in [
+                    ("🌙 前日", shap_evening),
+                    ("☀️ 10時", shap_early),
+                    ("🌅 13時", shap_morning),
+                ] if v]
+                if shap_cols and preds:
+                    if len(shap_cols) >= 2:
+                        label = f"📊 各馬のSHAP要因（{'・'.join(k for k,_ in shap_cols)}）"
+                    else:
+                        label = "📊 各馬のSHAP要因（上位5項目）"
                     with st.expander(label, expanded=False):
-                        if has_both:
-                            st.caption("🌙 前日予測 → 🌅 当日予測（変化を確認できます）")
+                        if len(shap_cols) >= 2:
+                            st.caption(" → ".join(k for k, _ in shap_cols) + "（変化を確認できます）")
                         for p in sorted(preds, key=lambda x: x.get("予測順位", 99)):
                             horse = p["馬名"]
-                            f_eve = shap_evening.get(horse) if shap_evening else None
-                            f_morn = shap_morning.get(horse) if shap_morning else None
-                            if not f_eve and not f_morn:
+                            horse_factors = [(k, v.get(horse)) for k, v in shap_cols]
+                            if not any(f for _, f in horse_factors):
                                 continue
                             rank = p.get("予測順位", "")
                             medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"**{rank}位**")
                             st.markdown(f"{medal} **{horse}**（勝率 {p['勝率(%)']:.1f}%）")
-                            if has_both:
-                                col_eve, col_morn = st.columns(2)
-                                with col_eve:
-                                    st.caption("🌙 前日予測")
-                                    if f_eve:
-                                        st.markdown("🔺 プラス")
-                                        for f in f_eve.get("positive", []):
-                                            st.markdown(f"- {f['label']}: **{f['value']}**")
-                                        st.markdown("🔻 マイナス")
-                                        for f in f_eve.get("negative", []):
-                                            st.markdown(f"- {f['label']}: **{f['value']}**")
-                                with col_morn:
-                                    st.caption("🌅 当日予測")
-                                    if f_morn:
-                                        st.markdown("🔺 プラス")
-                                        for f in f_morn.get("positive", []):
-                                            st.markdown(f"- {f['label']}: **{f['value']}**")
-                                        st.markdown("🔻 マイナス")
-                                        for f in f_morn.get("negative", []):
-                                            st.markdown(f"- {f['label']}: **{f['value']}**")
+                            if len(shap_cols) >= 2:
+                                cols_st = st.columns(len(shap_cols))
+                                for i, (col_label, factors) in enumerate(horse_factors):
+                                    with cols_st[i]:
+                                        st.caption(col_label)
+                                        if factors:
+                                            st.markdown("🔺 プラス")
+                                            for f in factors.get("positive", []):
+                                                st.markdown(f"- {f['label']}: **{f['value']}**")
+                                            st.markdown("🔻 マイナス")
+                                            for f in factors.get("negative", []):
+                                                st.markdown(f"- {f['label']}: **{f['value']}**")
                             else:
-                                factors = f_eve or f_morn
-                                cols = st.columns(2)
-                                with cols[0]:
+                                factors = horse_factors[0][1]
+                                cols2 = st.columns(2)
+                                with cols2[0]:
                                     st.markdown("🔺 プラス評価")
                                     for f in factors.get("positive", []):
                                         st.markdown(f"- {f['label']}: **{f['value']}**")
-                                with cols[1]:
+                                with cols2[1]:
                                     st.markdown("🔻 マイナス評価")
                                     for f in factors.get("negative", []):
                                         st.markdown(f"- {f['label']}: **{f['value']}**")
