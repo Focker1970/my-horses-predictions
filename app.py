@@ -847,27 +847,56 @@ with tab_cal:
                                 f"- **{bet['馬券種']}** {bet['買い目']}  \n  _{bet['理由']}_"
                             )
 
-                # SHAP要因
-                shap_factors = pred.get("shap_factors", {})
-                if shap_factors and preds:
-                    with st.expander("📊 各馬のSHAP要因（上位5項目）", expanded=False):
+                # SHAP要因（前日 / 当日 比較対応）
+                shap_evening = pred.get("shap_factors_evening") or pred.get("shap_factors", {})
+                shap_morning = pred.get("shap_factors_morning", {})
+                has_both = bool(shap_evening) and bool(shap_morning)
+                shap_any = shap_evening or shap_morning
+                if shap_any and preds:
+                    label = "📊 各馬のSHAP要因（前日 / 当日）" if has_both else "📊 各馬のSHAP要因（上位5項目）"
+                    with st.expander(label, expanded=False):
+                        if has_both:
+                            st.caption("🌙 前日予測 → 🌅 当日予測（変化を確認できます）")
                         for p in sorted(preds, key=lambda x: x.get("予測順位", 99)):
                             horse = p["馬名"]
-                            factors = shap_factors.get(horse)
-                            if not factors:
+                            f_eve = shap_evening.get(horse) if shap_evening else None
+                            f_morn = shap_morning.get(horse) if shap_morning else None
+                            if not f_eve and not f_morn:
                                 continue
                             rank = p.get("予測順位", "")
                             medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"**{rank}位**")
                             st.markdown(f"{medal} **{horse}**（勝率 {p['勝率(%)']:.1f}%）")
-                            cols = st.columns(2)
-                            with cols[0]:
-                                st.markdown("🔺 プラス評価")
-                                for f in factors.get("positive", []):
-                                    st.markdown(f"- {f['label']}: **{f['value']}**")
-                            with cols[1]:
-                                st.markdown("🔻 マイナス評価")
-                                for f in factors.get("negative", []):
-                                    st.markdown(f"- {f['label']}: **{f['value']}**")
+                            if has_both:
+                                col_eve, col_morn = st.columns(2)
+                                with col_eve:
+                                    st.caption("🌙 前日予測")
+                                    if f_eve:
+                                        st.markdown("🔺 プラス")
+                                        for f in f_eve.get("positive", []):
+                                            st.markdown(f"- {f['label']}: **{f['value']}**")
+                                        st.markdown("🔻 マイナス")
+                                        for f in f_eve.get("negative", []):
+                                            st.markdown(f"- {f['label']}: **{f['value']}**")
+                                with col_morn:
+                                    st.caption("🌅 当日予測")
+                                    if f_morn:
+                                        st.markdown("🔺 プラス")
+                                        for f in f_morn.get("positive", []):
+                                            st.markdown(f"- {f['label']}: **{f['value']}**")
+                                        st.markdown("🔻 マイナス")
+                                        for f in f_morn.get("negative", []):
+                                            st.markdown(f"- {f['label']}: **{f['value']}**")
+                            else:
+                                factors = f_eve or f_morn
+                                cols = st.columns(2)
+                                with cols[0]:
+                                    st.markdown("🔺 プラス評価")
+                                    for f in factors.get("positive", []):
+                                        st.markdown(f"- {f['label']}: **{f['value']}**")
+                                with cols[1]:
+                                    st.markdown("🔻 マイナス評価")
+                                    for f in factors.get("negative", []):
+                                        st.markdown(f"- {f['label']}: **{f['value']}**")
                             st.markdown("---")
 
                 # AIコメント
