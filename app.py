@@ -15,13 +15,19 @@ STRATEGY_DIR = APP_DIR / "data" / "strategy"
 SCHEDULE_PATH = APP_DIR / "data" / "2026重賞レーススケジュール.txt"
 
 
-def _load_ai_comments(date_str: str) -> dict:
-    """指定日の ai_comments ファイルを読み込む。形式: {race_id: {馬名: コメント}}"""
-    path = AI_COMMENTS_DIR / f"{date_str}.json"
-    if not path.exists():
+def _load_ai_comments_for_race(race_id: str) -> dict:
+    """race_idに対応するAIコメントを全ファイルから検索する。形式: {馬名: コメント}"""
+    if not AI_COMMENTS_DIR.exists():
         return {}
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    for path in sorted(AI_COMMENTS_DIR.glob("*.json"), reverse=True):
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            if race_id in data:
+                return data[race_id]
+        except Exception:
+            continue
+    return {}
 
 st.set_page_config(page_title="My Horses AI 予測", page_icon="🏇", layout="wide")
 
@@ -119,7 +125,7 @@ with tab_pred:
             pred_path = PREDICTIONS_DIR / f"{selected_date}.json"
             with open(pred_path, encoding="utf-8") as f:
                 pred_data = json.load(f)
-            ai_comments_by_race = _load_ai_comments(selected_date)
+
 
             # モードバッジ
             pred_mode = pred_data.get("mode", "")
@@ -309,7 +315,7 @@ with tab_pred:
                         # AIコメント（別ファイル優先、なければJSON内フォールバック）
                         race_id_key = race.get("race_id", "")
                         ai_comments = (
-                            ai_comments_by_race.get(race_id_key)
+                            _load_ai_comments_for_race(race_id_key)
                             or race.get("ai_comments", {})
                         )
                         if ai_comments:
@@ -988,7 +994,7 @@ with tab_cal:
 
                 # AIコメント（別ファイル優先、なければJSON内フォールバック）
                 ai_comments = (
-                    ai_comments_by_race.get(pred.get("race_id", ""))
+                    _load_ai_comments_for_race(pred.get("race_id", ""))
                     or pred.get("ai_comments", {})
                 )
                 if ai_comments:
