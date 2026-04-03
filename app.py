@@ -10,8 +10,18 @@ import streamlit as st
 
 APP_DIR = Path(__file__).resolve().parent
 PREDICTIONS_DIR = APP_DIR / "data" / "predictions"
+AI_COMMENTS_DIR = APP_DIR / "data" / "ai_comments"
 STRATEGY_DIR = APP_DIR / "data" / "strategy"
 SCHEDULE_PATH = APP_DIR / "data" / "2026重賞レーススケジュール.txt"
+
+
+def _load_ai_comments(date_str: str) -> dict:
+    """指定日の ai_comments ファイルを読み込む。形式: {race_id: {馬名: コメント}}"""
+    path = AI_COMMENTS_DIR / f"{date_str}.json"
+    if not path.exists():
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 st.set_page_config(page_title="My Horses AI 予測", page_icon="🏇", layout="wide")
 
@@ -109,6 +119,7 @@ with tab_pred:
             pred_path = PREDICTIONS_DIR / f"{selected_date}.json"
             with open(pred_path, encoding="utf-8") as f:
                 pred_data = json.load(f)
+            ai_comments_by_race = _load_ai_comments(selected_date)
 
             # モードバッジ
             pred_mode = pred_data.get("mode", "")
@@ -236,6 +247,76 @@ with tab_pred:
                                     .format(ev_fmt, na_rep="-"),
                                     use_container_width=True, hide_index=True,
                                 )
+
+                        # SHAP要因（前日 / 当日 比較対応）
+                        shap_evening = race.get("shap_factors_evening") or race.get("shap_factors", {})
+                        shap_morning = race.get("shap_factors_morning", {})
+                        has_both = bool(shap_evening) and bool(shap_morning)
+                        shap_any = shap_evening or shap_morning
+                        if shap_any and preds:
+                            label = "📊 各馬のSHAP要因（前日 / 当日）" if has_both else "📊 各馬のSHAP要因（上位5項目）"
+                            with st.expander(label, expanded=False):
+                                if has_both:
+                                    st.caption("🌙 前日予測 → 🌅 当日予測（変化を確認できます）")
+                                for p in sorted(preds, key=lambda x: x.get("予測順位", 99)):
+                                    horse = p["馬名"]
+                                    f_eve = shap_evening.get(horse) if shap_evening else None
+                                    f_morn = shap_morning.get(horse) if shap_morning else None
+                                    if not f_eve and not f_morn:
+                                        continue
+                                    rank = p.get("予測順位", "")
+                                    medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"**{rank}位**")
+                                    st.markdown(f"{medal} **{horse}**（勝率 {p['勝率(%)']:.1f}%）")
+                                    if has_both:
+                                        col_eve, col_morn = st.columns(2)
+                                        with col_eve:
+                                            st.caption("🌙 前日予測")
+                                            if f_eve:
+                                                st.markdown("🔺 プラス")
+                                                for f in f_eve.get("positive", []):
+                                                    st.markdown(f"- {f['label']}: **{f['value']}**")
+                                                st.markdown("🔻 マイナス")
+                                                for f in f_eve.get("negative", []):
+                                                    st.markdown(f"- {f['label']}: **{f['value']}**")
+                                        with col_morn:
+                                            st.caption("🌅 当日予測")
+                                            if f_morn:
+                                                st.markdown("🔺 プラス")
+                                                for f in f_morn.get("positive", []):
+                                                    st.markdown(f"- {f['label']}: **{f['value']}**")
+                                                st.markdown("🔻 マイナス")
+                                                for f in f_morn.get("negative", []):
+                                                    st.markdown(f"- {f['label']}: **{f['value']}**")
+                                    else:
+                                        factors = f_eve or f_morn
+                                        cols2 = st.columns(2)
+                                        with cols2[0]:
+                                            st.markdown("🔺 プラス評価")
+                                            for f in factors.get("positive", []):
+                                                st.markdown(f"- {f['label']}: **{f['value']}**")
+                                        with cols2[1]:
+                                            st.markdown("🔻 マイナス評価")
+                                            for f in factors.get("negative", []):
+                                                st.markdown(f"- {f['label']}: **{f['value']}**")
+                                    st.markdown("---")
+
+                        # AIコメント（別ファイル優先、なければJSON内フォールバック）
+                        race_id_key = race.get("race_id", "")
+                        ai_comments = (
+                            ai_comments_by_race.get(race_id_key)
+                            or race.get("ai_comments", {})
+                        )
+                        if ai_comments:
+                            with st.expander("🤖 AIコメント（各馬の予測要因）", expanded=False):
+                                preds_sorted = sorted(preds, key=lambda x: x.get("予測順位", 99))
+                                for p in preds_sorted:
+                                    horse = p["馬名"]
+                                    comment = ai_comments.get(horse, "")
+                                    if comment:
+                                        rank = p.get("予測順位", "")
+                                        medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"**{rank}位**")
+                                        st.markdown(f"{medal} **{horse}**")
+                                        st.markdown(f"> {comment}")
 
                         # レース結果（JSONに埋め込まれたデータを使用）
                         result_data = race.get("result")
@@ -899,8 +980,11 @@ with tab_cal:
                                         st.markdown(f"- {f['label']}: **{f['value']}**")
                             st.markdown("---")
 
-                # AIコメント
-                ai_comments = pred.get("ai_comments", {})
+                # AIコメント（別ファイル優先、なければJSON内フォールバック）
+                ai_comments = (
+                    ai_comments_by_race.get(pred.get("race_id", ""))
+                    or pred.get("ai_comments", {})
+                )
                 if ai_comments:
                     with st.expander("🤖 AIコメント（各馬の予測要因）", expanded=False):
                         preds_sorted = sorted(preds, key=lambda x: x.get("予測順位", 99))
