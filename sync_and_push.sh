@@ -10,6 +10,10 @@ PUBLIC_DIR="$PROJECT_DIR/public"
 # 予測JSONをコピー
 cp "$PROJECT_DIR/data/predictions/"*.json "$PUBLIC_DIR/data/predictions/" 2>/dev/null || true
 
+# AIコメントをコピー
+mkdir -p "$PUBLIC_DIR/data/ai_comments"
+cp "$PROJECT_DIR/data/ai_comments/"*.json "$PUBLIC_DIR/data/ai_comments/" 2>/dev/null || true
+
 # 重賞スケジュールをコピー
 cp "$PROJECT_DIR/2026重賞レーススケジュール.txt" "$PUBLIC_DIR/data/" 2>/dev/null || true
 
