@@ -172,7 +172,7 @@ with tab_pred:
                                 pred_df["期待値"] = ((pred_df["勝率(%)"] / 100) * pred_df["単勝"]).round(2)
                             if "人気" in pred_df.columns:
                                 pred_df["人気"] = pd.to_numeric(pred_df["人気"], errors="coerce")
-                            disp_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "スコア", "期待値"] if c in pred_df.columns]
+                            disp_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "相対評価", "トレンド", "コンビ", "単勝", "人気", "スコア", "期待値"] if c in pred_df.columns]
                             disp_df = pred_df[disp_cols].copy()
                             if "単勝" in disp_df.columns:
                                 disp_df = disp_df.rename(columns={"単勝": "単勝オッズ"})
@@ -846,6 +846,29 @@ with tab_cal:
                             st.markdown(
                                 f"- **{bet['馬券種']}** {bet['買い目']}  \n  _{bet['理由']}_"
                             )
+
+                # SHAP要因
+                shap_factors = pred.get("shap_factors", {})
+                if shap_factors and preds:
+                    with st.expander("📊 各馬のSHAP要因（上位5項目）", expanded=False):
+                        for p in sorted(preds, key=lambda x: x.get("予測順位", 99)):
+                            horse = p["馬名"]
+                            factors = shap_factors.get(horse)
+                            if not factors:
+                                continue
+                            rank = p.get("予測順位", "")
+                            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(rank, f"**{rank}位**")
+                            st.markdown(f"{medal} **{horse}**（勝率 {p['勝率(%)']:.1f}%）")
+                            cols = st.columns(2)
+                            with cols[0]:
+                                st.markdown("🔺 プラス評価")
+                                for f in factors.get("positive", []):
+                                    st.markdown(f"- {f['label']}: **{f['value']}**")
+                            with cols[1]:
+                                st.markdown("🔻 マイナス評価")
+                                for f in factors.get("negative", []):
+                                    st.markdown(f"- {f['label']}: **{f['value']}**")
+                            st.markdown("---")
 
                 # AIコメント
                 ai_comments = pred.get("ai_comments", {})
