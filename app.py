@@ -167,8 +167,14 @@ with tab_pred:
                                 st.caption(conf_reason)
 
                         predicted_at = race.get("predicted_at", "")
+                        race_id_disp = race.get("race_id", "")
+                        caption_parts = []
                         if predicted_at:
-                            st.caption(f"予測日時: {predicted_at}")
+                            caption_parts.append(f"予測日時: {predicted_at}")
+                        if race_id_disp:
+                            caption_parts.append(f"race_id: {race_id_disp}")
+                        if caption_parts:
+                            st.caption("　".join(caption_parts))
 
                         # 予測結果テーブル
                         preds = race.get("predictions", [])
