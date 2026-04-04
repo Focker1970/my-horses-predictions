@@ -195,7 +195,7 @@ with tab_pred:
                                 pred_df["期待値"] = ((pred_df["勝率(%)"] / 100) * pred_df["単勝"]).round(2)
                             if "人気" in pred_df.columns:
                                 pred_df["人気"] = pd.to_numeric(pred_df["人気"], errors="coerce")
-                            disp_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "相対評価", "トレンド", "コンビ", "単勝", "人気", "スコア", "期待値"] if c in pred_df.columns]
+                            disp_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "スコア", "相対評価", "トレンド", "コンビ", "期待値"] if c in pred_df.columns]
                             disp_df = pred_df[disp_cols].copy()
                             if "単勝" in disp_df.columns:
                                 disp_df = disp_df.rename(columns={"単勝": "単勝オッズ"})
