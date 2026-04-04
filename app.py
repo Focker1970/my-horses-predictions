@@ -260,6 +260,25 @@ with tab_pred:
                                     use_container_width=True, hide_index=True,
                                 )
 
+                        # 期待値の見方
+                        with st.expander("💡 期待値の見方"):
+                            st.markdown("""
+**期待値（EV）とは？**
+
+`期待値 = モデル推定勝率(%) ÷ 100 × 単勝オッズ`
+
+> 例: 勝率20% × オッズ8倍 → 期待値 **1.60**（1円賭けると1.60円が期待リターン）
+
+| 期待値 | 意味 |
+|---|---|
+| **1.0 以上** | モデルがオッズより高く評価 → 購入価値あり |
+| **1.0 未満** | オッズ相応か過大評価 → 見送り推奨 |
+
+**注意点**
+- 期待値はあくまでモデルの推定値です。モデルの勝率予測が外れれば期待値通りにはなりません
+- 単勝オッズが確定していない前日予測では、期待値の精度が下がります
+""")
+
                         # SHAP要因（3段階対応）
                         shap_evening = race.get("shap_factors_evening") or race.get("shap_factors", {})
                         shap_early = race.get("shap_factors_morning_early", {})
