@@ -208,6 +208,12 @@ with tab_pred:
                                 fmt["期待値"] = "{:.2f}"
                             st.dataframe(disp_df.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
 
+                            # 出走取消馬（欄外）
+                            scratched = race.get("scratched", [])
+                            if scratched:
+                                names = "、".join(f"馬番{s['馬番']} {s['馬名']}" for s in scratched)
+                                st.caption(f"取消: {names}")
+
                             # Top3
                             top3 = pred_df.head(3)
                             cols = st.columns(min(3, len(top3)))
