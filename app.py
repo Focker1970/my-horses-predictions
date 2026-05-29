@@ -15,6 +15,29 @@ STRATEGY_DIR = APP_DIR / "data" / "strategy"
 SCHEDULE_PATH = APP_DIR / "data" / "2026重賞レーススケジュール.txt"
 
 
+def _blind_spot_check(predictions: list[dict]) -> list[dict]:
+    """AIの死角レース判定: キャリア5戦未満・5番人気以内なのにAI予測順位が著しく低い馬を返す。"""
+    result = []
+    for p in predictions:
+        try:
+            pop = int(p.get("人気") or 99)
+        except (TypeError, ValueError):
+            continue
+        if pop <= 0 or pop > 5:
+            continue
+        try:
+            pred_rank = int(p.get("予測順位") or 99)
+        except (TypeError, ValueError):
+            continue
+        if pred_rank - pop < 7:
+            continue
+        career = p.get("career", 99)
+        if career >= 5:
+            continue
+        result.append({**p, "_career": career, "_gap": pred_rank - pop})
+    return sorted(result, key=lambda x: x["_gap"], reverse=True)
+
+
 def _load_ai_comments_for_race(race_id: str) -> dict:
     """race_idに対応するAIコメントを全ファイルから検索する。形式: {馬名: コメント}"""
     if not AI_COMMENTS_DIR.exists():
@@ -213,6 +236,16 @@ with tab_pred:
                             if scratched:
                                 names = "、".join(f"馬番{s['馬番']} {s['馬名']}" for s in scratched)
                                 st.caption(f"取消: {names}")
+
+                            # AIの死角レースチェック
+                            blind_spots = _blind_spot_check(preds)
+                            if blind_spots:
+                                for b in blind_spots:
+                                    st.warning(
+                                        f"AIの死角レース: {b.get('馬名','')} "
+                                        f"（{b.get('人気','?')}番人気 / AI予測{b.get('予測順位','?')}位 / キャリア{b['_career']}戦）\n\n"
+                                        "キャリア5戦未満かつ5番人気以内の馬のAI予測順位が著しく低い状態です。"
+                                    )
 
                             # Top3
                             top3 = pred_df.head(3)
@@ -476,6 +509,16 @@ with tab_fight:
                         if "期待値" in disp.columns:
                             fmt["期待値"] = "{:.2f}"
                         st.dataframe(disp.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
+
+                        # AIの死角レースチェック
+                        blind_spots = _blind_spot_check(preds)
+                        if blind_spots:
+                            for b in blind_spots:
+                                st.warning(
+                                    f"AIの死角レース: {b.get('馬名','')} "
+                                    f"（{b.get('人気','?')}番人気 / AI予測{b.get('予測順位','?')}位 / キャリア{b['_career']}戦）\n\n"
+                                    "キャリア5戦未満かつ5番人気以内の馬のAI予測順位が著しく低い状態です。"
+                                )
 
                     rec = race.get("recommendation", {})
                     bets = rec.get("推奨買い目", [])
@@ -941,6 +984,16 @@ with tab_cal:
                         disp_df.style.format(fmt, na_rep="-"),
                         use_container_width=True, hide_index=True,
                     )
+
+                    # AIの死角レースチェック
+                    blind_spots = _blind_spot_check(preds)
+                    if blind_spots:
+                        for b in blind_spots:
+                            st.warning(
+                                f"AIの死角レース: {b.get('馬名','')} "
+                                f"（{b.get('人気','?')}番人気 / AI予測{b.get('予測順位','?')}位 / キャリア{b['_career']}戦）\n\n"
+                                "キャリア5戦未満かつ5番人気以内の馬のAI予測順位が著しく低い状態です。"
+                            )
 
                     top3 = pred_df.head(3)
                     medal_cols = st.columns(min(3, len(top3)))
