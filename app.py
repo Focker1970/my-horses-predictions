@@ -922,14 +922,46 @@ with tab_cal:
 
             with st.expander(exp_header, expanded=False):
                 if promising_flag:
-                    st.info(
-                        "🔥 **芝×1800m以上×乖離シグナル**: モデルが1番人気を4位以下に評価。"
-                        "バックテストで回収率124%（ワイド）の有望パターンです。"
+                    _pa_list = (pred or {}).get("predictions", [])
+                    _pa_top1 = next((p for p in _pa_list if p.get("予測順位") == 1), None)
+                    _pa_fav  = next((p for p in _pa_list if p.get("人気") == 1), None)
+                    _pa_fav_rank = _pa_fav.get("予測順位", "?") if _pa_fav else "?"
+                    _pa_top1_line = (
+                        f"- モデル1位: **{_pa_top1['馬名']}**（馬番{_pa_top1['馬番']} / 勝率{float(_pa_top1.get('勝率(%)', 0)):.1f}%）"
+                        if _pa_top1 else "- モデル1位: 取得中"
+                    )
+                    _pa_fav_line = (
+                        f"- 1番人気:   **{_pa_fav['馬名']}**（馬番{_pa_fav['馬番']} / モデル{_pa_fav_rank}位）"
+                        if _pa_fav else "- 1番人気: 取得中"
+                    )
+                    st.warning(
+                        f"**有望パターン: 芝×1800m以上×乖離レース**\n\n"
+                        f"モデルが1番人気を{_pa_fav_rank}位と評価（乖離判定: 4位以下）。"
+                        f"芝1800m以上でこのシグナルが出ると、バックテスト実績で**回収率124%**（125件・的中率35%）を記録しています。\n\n"
+                        f"**推奨買い目 → ワイド 1点**\n"
+                        f"{_pa_top1_line}\n"
+                        f"{_pa_fav_line}"
                     )
                 if dirt_chusho_flag:
-                    st.info(
-                        "💎 **ダート×中距離×一致シグナル**: 1番人気がモデルTop2以内で一致。"
-                        "バックテストで回収率113%（ワイド 1番人気×2番人気）の有望パターンです。"
+                    _pb_list = (pred or {}).get("predictions", [])
+                    _pb_fav  = next((p for p in _pb_list if p.get("人気") == 1), None)
+                    _pb_fav2 = next((p for p in _pb_list if p.get("人気") == 2), None)
+                    _pb_fav_rank = _pb_fav.get("予測順位", "?") if _pb_fav else "?"
+                    _pb_fav_line = (
+                        f"- 1番人気: **{_pb_fav['馬名']}**（馬番{_pb_fav['馬番']} / モデル{_pb_fav_rank}位）"
+                        if _pb_fav else "- 1番人気: 取得中"
+                    )
+                    _pb_fav2_line = (
+                        f"- 2番人気: **{_pb_fav2['馬名']}**（馬番{_pb_fav2['馬番']}）"
+                        if _pb_fav2 else "- 2番人気: 取得中"
+                    )
+                    st.warning(
+                        f"**有望パターン: ダート×中距離×一致レース**\n\n"
+                        f"1番人気がモデルTop{_pb_fav_rank}（一致判定: Top2以内）。"
+                        f"ダート1801〜2200mでこのシグナルが出ると、バックテスト実績で**ワイド回収率113%**（99件・的中率44%）を記録しています。\n\n"
+                        f"**推奨買い目 → ワイド 1点**\n"
+                        f"{_pb_fav_line}\n"
+                        f"{_pb_fav2_line}"
                     )
 
                 if pred is None:
