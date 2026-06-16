@@ -8,6 +8,11 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+try:
+    from model.odds_signals import detect_odds_crash
+except ImportError:
+    detect_odds_crash = None  # sync 前の環境でも起動できるようにフォールバック
+
 APP_DIR = Path(__file__).resolve().parent
 PREDICTIONS_DIR = APP_DIR / "data" / "predictions"
 AI_COMMENTS_DIR = APP_DIR / "data" / "ai_comments"
@@ -36,6 +41,44 @@ def _blind_spot_check(predictions: list[dict]) -> list[dict]:
             continue
         result.append({**p, "_career": career, "_gap": pred_rank - pop})
     return sorted(result, key=lambda x: x["_gap"], reverse=True)
+
+
+def _show_odds_crash(preds: list[dict]) -> None:
+    """オッズ急落馬（前日夜→最終 40%以上下落）を警告表示する。"""
+    if detect_odds_crash is None:
+        return
+    crashed = detect_odds_crash(preds)
+    if not crashed:
+        return
+    overlooked = [c for c in crashed if (c["予測順位"] or 99) > 3]
+    aligned    = [c for c in crashed if (c["予測順位"] or 99) <= 3]
+
+    def _fmt(c):
+        rank = c["予測順位"]
+        rank_marker = (
+            "◎" if rank == 1 else "○" if rank == 2 else "▲" if rank == 3
+            else f"AI{rank}位" if rank is not None else "AI?位"
+        )
+        pop = f"人気{c['人気']}" if c["人気"] is not None else "人気?"
+        num = f"馬番{c['馬番']}" if c["馬番"] is not None else "馬番?"
+        return (
+            f"{num} {c['馬名']}（{rank_marker} / {pop}）"
+            f"  前日夜 {c['単勝_evening']:.1f}倍 → 最終 {c['単勝']:.1f}倍（-{c['下落率']:.0f}%）"
+        )
+
+    lines = []
+    if overlooked:
+        lines.append("**AI評価が低い急落馬（市場の見落とし示唆）**")
+        lines += [f"- **{_fmt(c)}**" for c in overlooked]
+    if aligned:
+        lines.append("**AI上位の急落馬（市場と一致）**")
+        lines += [f"- {_fmt(c)}" for c in aligned]
+
+    st.warning(
+        "**オッズ急落馬（前日夜→最終 40%以上下落）**\n\n"
+        "市場が直前で支持を集中させた馬です。AI予測順位が低い場合は再評価候補。\n\n"
+        + "\n".join(lines)
+    )
 
 
 def _load_ai_comments_for_race(race_id: str) -> dict:
@@ -246,6 +289,7 @@ with tab_pred:
                                         f"（{b.get('人気','?')}番人気 / AI予測{b.get('予測順位','?')}位 / キャリア{b['_career']}戦）\n\n"
                                         "キャリア5戦未満かつ5番人気以内の馬のAI予測順位が著しく低い状態です。"
                                     )
+                            _show_odds_crash(preds)
 
                             # Top3
                             top3 = pred_df.head(3)
@@ -519,6 +563,7 @@ with tab_fight:
                                     f"（{b.get('人気','?')}番人気 / AI予測{b.get('予測順位','?')}位 / キャリア{b['_career']}戦）\n\n"
                                     "キャリア5戦未満かつ5番人気以内の馬のAI予測順位が著しく低い状態です。"
                                 )
+                        _show_odds_crash(preds)
 
                     rec = race.get("recommendation", {})
                     bets = rec.get("推奨買い目", [])
@@ -1026,6 +1071,7 @@ with tab_cal:
                                 f"（{b.get('人気','?')}番人気 / AI予測{b.get('予測順位','?')}位 / キャリア{b['_career']}戦）\n\n"
                                 "キャリア5戦未満かつ5番人気以内の馬のAI予測順位が著しく低い状態です。"
                             )
+                    _show_odds_crash(preds)
 
                     top3 = pred_df.head(3)
                     medal_cols = st.columns(min(3, len(top3)))
