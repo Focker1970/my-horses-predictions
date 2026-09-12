@@ -199,7 +199,7 @@ with tab_pred:
             evening_generated_at = pred_data.get("evening_generated_at", "")
             if pred_mode == "morning":
                 evening_info = f"（前日予測: {evening_generated_at}）" if evening_generated_at else ""
-                st.caption(f"生成日時: {generated_at}　🌅 **当日更新**（オッズ・期待値反映）{evening_info}")
+                st.caption(f"生成日時: {generated_at}　🌅 **当日更新**（最終オッズ反映）{evening_info}")
             elif pred_mode == "evening":
                 st.caption(f"生成日時: {generated_at}　🌙 **前日予測**（実力評価）")
             else:
@@ -255,13 +255,12 @@ with tab_pred:
                             pred_df = pred_df.sort_values("予測順位").reset_index(drop=True)
                             if "単勝" in pred_df.columns:
                                 pred_df["単勝"] = pd.to_numeric(pred_df["単勝"], errors="coerce")
-                            if "期待値" in pred_df.columns:
-                                pred_df["期待値"] = pd.to_numeric(pred_df["期待値"], errors="coerce")
-                            elif "単勝" in pred_df.columns:
-                                pred_df["期待値"] = ((pred_df["勝率(%)"] / 100) * pred_df["単勝"]).round(2)
                             if "人気" in pred_df.columns:
                                 pred_df["人気"] = pd.to_numeric(pred_df["人気"], errors="coerce")
-                            disp_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "スコア", "相対評価", "トレンド", "コンビ", "期待値"] if c in pred_df.columns]
+                                # 乖離 = 人気 - 予測順位。期待値(EV)の表示を置き換えたもの
+                                # （docs/prediction_logic_fixes_2026-09.md 改修3）
+                                pred_df["乖離"] = (pred_df["人気"] - pred_df["予測順位"]).astype("Int64")
+                            disp_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "乖離", "スコア", "相対評価", "トレンド", "コンビ"] if c in pred_df.columns]
                             disp_df = pred_df[disp_cols].copy()
                             if "単勝" in disp_df.columns:
                                 disp_df = disp_df.rename(columns={"単勝": "単勝オッズ"})
@@ -270,8 +269,6 @@ with tab_pred:
                                 fmt["単勝オッズ"] = "{:.1f}"
                             if "スコア" in disp_df.columns:
                                 fmt["スコア"] = "{:.3f}"
-                            if "期待値" in disp_df.columns:
-                                fmt["期待値"] = "{:.2f}"
                             st.dataframe(disp_df.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
 
                             # 出走取消馬（欄外）
@@ -313,53 +310,34 @@ with tab_pred:
                                 for bet in bets:
                                     st.markdown(f"- **{bet['馬券種']}** {bet['買い目']}  \n  _{bet['理由']}_")
                             else:
-                                st.info("期待値がプラスの馬券が見つかりませんでした。")
+                                st.info("条件を満たす買い目が見つかりませんでした。")
 
-                            ev_list = rec.get("期待値一覧", [])
-                            if ev_list:
-                                st.markdown("**各馬の期待値一覧**")
-                                ev_df = pd.DataFrame(ev_list).sort_values("予測順位")
-                                ev_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "期待値"] if c in ev_df.columns]
-                                ev_disp = ev_df[ev_cols].copy()
-                                if "単勝" in ev_disp.columns:
-                                    ev_disp["単勝"] = pd.to_numeric(ev_disp["単勝"], errors="coerce")
-                                    ev_disp = ev_disp.rename(columns={"単勝": "単勝オッズ"})
-                                if "期待値" in ev_disp.columns:
-                                    ev_disp["期待値"] = pd.to_numeric(ev_disp["期待値"], errors="coerce")
-                                ev_fmt = {}
-                                if "単勝オッズ" in ev_disp.columns:
-                                    ev_fmt["単勝オッズ"] = "{:.1f}"
-                                if "期待値" in ev_disp.columns:
-                                    ev_fmt["期待値"] = "{:.2f}"
-                                st.dataframe(
-                                    ev_disp.style
-                                    .apply(
-                                        lambda row: ["background-color: #e6f4ea; color: #1a1a1a"] * len(row)
-                                        if pd.notna(row.get("期待値")) and row["期待値"] > 1.0
-                                        else ["background-color: #ffffff; color: #1a1a1a"] * len(row),
-                                        axis=1,
-                                    )
-                                    .format(ev_fmt, na_rep="-"),
-                                    use_container_width=True, hide_index=True,
-                                )
-
-                        # 期待値の見方
-                        with st.expander("💡 期待値の見方"):
+                        # 乖離の見方
+                        with st.expander("💡 乖離の見方"):
                             st.markdown("""
-**期待値（EV）とは？**
+**乖離とは？**
 
-`期待値 = モデル推定勝率(%) ÷ 100 × 単勝オッズ`
+`乖離 = 人気 - AI予測順位`
 
-> 例: 勝率20% × オッズ8倍 → 期待値 **1.60**（1円賭けると1.60円が期待リターン）
+> 例: 9番人気の馬をAIが2位と評価 → 乖離 **+7**（市場より大幅に高く評価している）
 
-| 期待値 | 意味 |
-|---|---|
-| **1.0 以上** | モデルがオッズより高く評価 → 購入価値あり |
-| **1.0 未満** | オッズ相応か過大評価 → 見送り推奨 |
+プラスが大きいほど「市場は評価していないがAIは買っている馬」です。
 
-**注意点**
-- 期待値はあくまでモデルの推定値です。モデルの勝率予測が外れれば期待値通りにはなりません
-- 単勝オッズが確定していない前日予測では、期待値の精度が下がります
+**重要: 乖離は参考指標であり、馬券の優位性は検証できていません**
+
+重賞78レース（2026-02〜09）で検証しましたが、現時点では次のとおりです。
+
+- 乖離がプラスの馬を選んでも、同じ人気帯の他の馬に対して**統計的に有意な差は確認できませんでした**
+- 乖離が大きいほど3着内率が上がるという関係も**確認できていません**（乖離が中程度の馬が最も成績が悪い帯もあります）
+- 上位人気帯では、**単に1番人気を買うほうが成績が良い**という結果でした
+
+乖離は「市場とAIの評価がどこで食い違っているか」を見るための指標です。
+そのまま買い目の根拠として使えるだけの裏付けは、まだ取れていません。
+
+**期待値(EV)の廃止について**
+
+以前表示していた「期待値(EV)」は廃止しました。EVは市場オッズを混ぜた確率から算出しており、
+検証の結果ほぼ市場の控除率を写すだけで購入判断の材料にならないことが分かったためです。
 """)
 
                         # SHAP要因（3段階対応）
@@ -464,10 +442,11 @@ with tab_pred:
     # 回収率の考え方
     with st.expander("📊 回収率の考え方"):
         st.markdown("""
-**期待値（EV）とは？**
-- `期待値 = モデル勝率(%) / 100 × 単勝オッズ`
-- **EV > 1.0** → モデルが市場（オッズ）より高く評価 → 購入価値あり
-- **EV < 1.0** → オッズなりか過大評価 → 見送り
+**乖離とは？**
+- `乖離 = 人気 - AI予測順位`
+- **プラスが大きい** → 市場は評価していないがAIは高く買っている馬
+- **ただし参考指標です。** 重賞78レースの検証では、乖離がプラスの馬を選んでも同じ人気帯の他の馬に対して統計的に有意な差は確認できませんでした。買い目の根拠として使えるだけの裏付けはまだ取れていません
+- 以前使っていた「期待値(EV)」は廃止しました（市場オッズを混ぜた確率から算出しており、購入判断の材料にならないことが検証で判明したため）
 
 **回収率とは？**
 - `回収率(%) = 払戻金の合計 ÷ 購入金額の合計 × 100`
@@ -536,22 +515,18 @@ with tab_fight:
                         pred_df = pd.DataFrame(preds).sort_values("予測順位").reset_index(drop=True)
                         if "単勝" in pred_df.columns:
                             pred_df["単勝"] = pd.to_numeric(pred_df["単勝"], errors="coerce")
-                        if "期待値" in pred_df.columns:
-                            pred_df["期待値"] = pd.to_numeric(pred_df["期待値"], errors="coerce")
-                        elif "単勝" in pred_df.columns:
-                            pred_df["期待値"] = ((pred_df["勝率(%)"] / 100) * pred_df["単勝"]).round(2)
                         if "人気" in pred_df.columns:
                             pred_df["人気"] = pd.to_numeric(pred_df["人気"], errors="coerce")
+                            # 乖離 = 人気 - 予測順位（改修3でEV表示を置き換え）
+                            pred_df["乖離"] = (pred_df["人気"] - pred_df["予測順位"]).astype("Int64")
 
-                        disp_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "期待値"] if c in pred_df.columns]
+                        disp_cols = [c for c in ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "乖離"] if c in pred_df.columns]
                         disp = pred_df[disp_cols].copy()
                         if "単勝" in disp.columns:
                             disp = disp.rename(columns={"単勝": "単勝オッズ"})
                         fmt = {}
                         if "単勝オッズ" in disp.columns:
                             fmt["単勝オッズ"] = "{:.1f}"
-                        if "期待値" in disp.columns:
-                            fmt["期待値"] = "{:.2f}"
                         st.dataframe(disp.style.format(fmt, na_rep="-"), use_container_width=True, hide_index=True)
 
                         # AIの死角レースチェック
@@ -729,10 +704,25 @@ def _parse_dist_num(dist_str: str) -> int:
 
 
 def _is_promising(pred_race: dict) -> bool:
+    """戦略A: 芝×1800m以上×乖離（1番人気がモデル4位以下）シグナル判定。
+
+    2026-09-12（改修4-4）: 相手（モデル1位）の人気帯上限 4〜12番人気を追加。
+    model/predictor.py の recommend_bets と条件を揃えること。
+    """
     dist_str = pred_race.get("distance", "")
     if not dist_str.startswith("芝") or _parse_dist_num(dist_str) < 1800:
         return False
-    for p in pred_race.get("predictions", []):
+    preds = pred_race.get("predictions", [])
+    top1 = next((p for p in preds if p.get("予測順位") == 1), None)
+    if top1 is None:
+        return False
+    try:
+        top1_pop = int(top1.get("人気"))
+    except (TypeError, ValueError):
+        return False
+    if not (4 <= top1_pop <= 12):
+        return False
+    for p in preds:
         if p.get("人気") == 1:
             return (p.get("予測順位") or 99) >= 4
     return False
@@ -981,8 +971,12 @@ with tab_cal:
                     )
                     st.warning(
                         f"**有望パターン: 芝×1800m以上×乖離レース**\n\n"
-                        f"モデルが1番人気を{_pa_fav_rank}位と評価（乖離判定: 4位以下）。"
-                        f"芝1800m以上でこのシグナルが出ると、バックテスト実績で**回収率124%**（125件・的中率35%）を記録しています。\n\n"
+                        f"モデルが1番人気を{_pa_fav_rank}位と評価（乖離判定: 4位以下）、"
+                        f"かつモデル1位が4〜12番人気。\n\n"
+                        # 2026-09-12（改修4）: 重賞での検証は6件のみ。回収率は提示しない。
+                        f"重賞での検証は6件のみのため、回収率は提示しません"
+                        f"（参考: 全レース対象のバックテストでは回収率124% / 125件・的中率35%。"
+                        f"本サイトは重賞のみのため母集団が異なります）。\n\n"
                         f"**推奨買い目 → ワイド 1点**\n"
                         f"{_pa_top1_line}\n"
                         f"{_pa_fav_line}"
@@ -1002,8 +996,11 @@ with tab_cal:
                     )
                     st.warning(
                         f"**有望パターン: ダート×中距離×一致レース**\n\n"
-                        f"1番人気がモデルTop{_pb_fav_rank}（一致判定: Top2以内）。"
-                        f"ダート1801〜2200mでこのシグナルが出ると、バックテスト実績で**ワイド回収率113%**（99件・的中率44%）を記録しています。\n\n"
+                        f"1番人気がモデルTop{_pb_fav_rank}（一致判定: Top2以内）。\n\n"
+                        # 2026-09-12（改修4）: 重賞での検証は3件のみ。回収率は提示しない。
+                        f"重賞での検証は3件のみのため、回収率は提示しません"
+                        f"（参考: 全レース対象のバックテストではワイド回収率113% / 99件・的中率44%。"
+                        f"本サイトは重賞のみのため母集団が異なります）。\n\n"
                         f"**推奨買い目 → ワイド 1点**\n"
                         f"{_pb_fav_line}\n"
                         f"{_pb_fav2_line}"
@@ -1039,13 +1036,16 @@ with tab_cal:
                         .sort_values("予測順位")
                         .reset_index(drop=True)
                     )
-                    for col in ["単勝", "期待値", "人気"]:
+                    for col in ["単勝", "人気"]:
                         if col in pred_df.columns:
                             pred_df[col] = pd.to_numeric(pred_df[col], errors="coerce")
+                    if "人気" in pred_df.columns:
+                        # 乖離 = 人気 - 予測順位（改修3でEV表示を置き換え）
+                        pred_df["乖離"] = (pred_df["人気"] - pred_df["予測順位"]).astype("Int64")
 
                     disp_cols = [
                         c for c in
-                        ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "期待値"]
+                        ["予測順位", "馬番", "馬名", "勝率(%)", "単勝", "人気", "乖離"]
                         if c in pred_df.columns
                     ]
                     disp_df = pred_df[disp_cols].head(5).copy()
@@ -1054,8 +1054,6 @@ with tab_cal:
                     fmt: dict[str, str] = {}
                     if "単勝オッズ" in disp_df.columns:
                         fmt["単勝オッズ"] = "{:.1f}"
-                    if "期待値" in disp_df.columns:
-                        fmt["期待値"] = "{:.2f}"
 
                     st.dataframe(
                         disp_df.style.format(fmt, na_rep="-"),
